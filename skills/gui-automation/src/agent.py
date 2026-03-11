@@ -13,11 +13,9 @@ from .actions import (
     scroll, drag, focus_window, get_active_window,
 )
 from .backends import get_backend
-from .recorder import ActionRecorder, ActionPlayer, list_recordings
+from .recorder import Recorder, Player, start_recording, stop_recording, record_action, play_recording
 
-# Global recorder instance
-_recorder = ActionRecorder()
-
+# Global recorder - use module-level functions
 # CDP support (lazy import)
 _cdp_client = None
 
@@ -138,8 +136,8 @@ def execute_tool(name: str, input_data: dict) -> dict:
     """Execute a tool and return result."""
     result = _execute_tool_inner(name, input_data)
     # Record action if recording is active (skip meta-tools and screenshots)
-    if _recorder.recording and name not in ("record_start", "record_stop", "replay", "list_recordings", "screenshot"):
-        _recorder.record_action(name, input_data, result)
+    if name not in ("record_start", "record_stop", "replay", "list_recordings", "screenshot"):
+        record_action(name, input_data, result)
     return result
 
 
