@@ -14,6 +14,21 @@ from .actions import (
 )
 from .backends import get_backend
 
+# CDP support (lazy import)
+_cdp_client = None
+
+def _get_cdp():
+    global _cdp_client
+    if _cdp_client is None:
+        try:
+            from .cdp_helper import CDPClient
+            c = CDPClient()
+            if c.is_available():
+                _cdp_client = c
+        except:
+            pass
+    return _cdp_client
+
 SYSTEM_PROMPT = """You are a GUI automation agent controlling a Linux desktop.
 
 You have two perception modes:
@@ -36,11 +51,19 @@ Available tools:
 - set_text: Set text in an editable field via AT-SPI
 - wait: Wait N seconds
 
+Browser tools (CDP - requires Chromium with --remote-debugging-port=9222):
+- cdp_navigate: Navigate browser to URL
+- cdp_click: Click element by CSS selector
+- cdp_type: Type text into element by CSS selector  
+- cdp_eval: Evaluate JavaScript expression
+- cdp_page_info: Get page title and URL
+
 Strategy:
 1. First use ui_tree to understand the interface structure
 2. If you can find the target element via AT-SPI, use do_action or click on its coordinates
 3. If AT-SPI doesn't help, take a screenshot and use visual analysis
-4. After each action, verify the result (ui_tree or screenshot)
+4. For browser tasks, use cdp_* tools (navigate, click selectors, type, eval JS)
+5. After each action, verify the result (ui_tree or screenshot or cdp_page_info)
 
 Be efficient. Prefer AT-SPI actions over coordinate clicks when available.
 """
@@ -62,6 +85,12 @@ def create_tools():
         {"name": "do_action", "description": "Execute AT-SPI action on element found by role+name", "input_schema": {"type": "object", "properties": {"role": {"type": "string"}, "name": {"type": "string"}, "action": {"type": "string", "default": "click"}}}},
         {"name": "set_text", "description": "Set text in editable field (by role+name)", "input_schema": {"type": "object", "properties": {"role": {"type": "string"}, "name": {"type": "string"}, "text": {"type": "string"}}, "required": ["text"]}},
         {"name": "wait", "description": "Wait seconds", "input_schema": {"type": "object", "properties": {"seconds": {"type": "number"}}, "required": ["seconds"]}},
+        # CDP tools (browser automation)
+        {"name": "cdp_navigate", "description": "Navigate browser to URL (requires Chromium with --remote-debugging-port=9222)", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
+        {"name": "cdp_click", "description": "Click element by CSS selector in browser", "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}}, "required": ["selector"]}},
+        {"name": "cdp_type", "description": "Type text into element by CSS selector in browser", "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}, "text": {"type": "string"}}, "required": ["selector", "text"]}},
+        {"name": "cdp_eval", "description": "Evaluate JavaScript in browser page", "input_schema": {"type": "object", "properties": {"expression": {"type": "string"}}, "required": ["expression"]}},
+        {"name": "cdp_page_info", "description": "Get current browser page title and URL", "input_schema": {"type": "object", "properties": {}}},
     ]
 
 
@@ -158,6 +187,44 @@ def execute_tool(name: str, input_data: dict) -> dict:
         elif name == "wait":
             time.sleep(input_data["seconds"])
             return {"type": "text", "text": f"Waited {input_data['seconds']}s"}
+
+        # CDP tools
+        elif name == "cdp_navigate":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available. Start Chromium with --remote-debugging-port=9222"}
+            cdp.navigate(input_data["url"])
+            time.sleep(2)
+            title = cdp.get_page_title()
+            return {"type": "text", "text": f"Navigated to {input_data['url']} - Title: {title}"}
+
+        elif name == "cdp_click":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            result = cdp.click_element(input_data["selector"])
+            return {"type": "text", "text": f"Clicked '{input_data['selector']}': {result}"}
+
+        elif name == "cdp_type":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            result = cdp.type_in_element(input_data["selector"], input_data["text"])
+            return {"type": "text", "text": f"Typed into '{input_data['selector']}': {result}"}
+
+        elif name == "cdp_eval":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            result = cdp.evaluate(input_data["expression"])
+            return {"type": "text", "text": f"JS result: {json.dumps(result, ensure_ascii=False)[:500]}"}
+
+        elif name == "cdp_page_info":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            info = {"url": cdp.get_page_url(), "title": cdp.get_page_title()}
+            return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
 
         else:
             return {"type": "text", "text": f"Unknown tool: {name}"}
