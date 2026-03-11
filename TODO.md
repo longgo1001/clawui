@@ -1,7 +1,9 @@
 # TODO.md - My Task List
 
 ## Priority: HIGH (Your Direct Instructions)
-- (暂无)
+- [ ] 自适应 GUI 自动化：用龙虾自身作为 AI 后端驱动（截图→分析→操作循环）
+- [ ] 支持 Ollama 本地模型接入（视觉模型如 llava/bakllava）
+- [ ] 支持其他模型接入（OpenAI GPT-4o、Google Gemini、任意 OpenAI-compatible API）
 
 ## Priority: MEDIUM (Autonomous Tasks)
 - [x] 调研并解决 XWayland 与 AT-SPI 不兼容问题（影响 Firefox/Chrome 自动化）- 用户添加
