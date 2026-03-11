@@ -51,54 +51,21 @@ class CDPBackend:
         return self.client.evaluate(js)
 
     def type(self, text: str, target_selector: str = None):
-        """
-        Type text into focused element or a specific CSS selector.
-        If no selector, assumes element already focused.
-        """
-        if target_selector:
-            js = f'''
-            (function() {{
-                const el = document.querySelector("{target_selector}");
-                if (!el) return "no-element";
-                el.focus();
-                el.value = "{text}";
-                el.dispatchEvent(new Event('input', {{bubbles:true}}));
-                el.dispatchEvent(new Event('change', {{bubbles:true}}));
-                return "typed";
-            }})()
-            '''
-            return self.client.evaluate(js)
-        else:
-            # Just simulate typing into active element
-            js = f'''
-            (function() {{
-                const el = document.activeElement;
-                if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {{
-                    el.value += "{text}";
-                    el.dispatchEvent(new Event('input', {{bubbles:true}}));
-                    return "typed";
-                }}
-                return "no-input";
-            }})()
-            '''
-            return self.client.evaluate(js)
+        """Type text using real keyboard dispatch (robust)."""
+        self.client.type_text(target_selector, text)
+        return f"typed: '{text}' via dispatchKeyEvent"
 
     def press_key(self, key: str):
         """Press a key (e.g., 'Enter', 'Tab')."""
-        key_map = {
-            "Return": "Enter", "Escape": "Escape", "Tab": "Tab",
-            "ArrowUp": "ArrowUp", "ArrowDown": "ArrowDown",
-            "ArrowLeft": "ArrowLeft", "ArrowRight": "ArrowRight"
-        }
-        js_key = key_map.get(key, key)
-        js = f'''
-        (function() {{
-            const ev = new KeyboardEvent('keydown', {{key: '{js_key}'}});
-            document.activeElement.dispatchEvent(ev);
-            return "pressed:" + '{js_key}';
-        }})()
-        '''
-        return self.client.evaluate(js)
+        self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyDown", "key": key, "text": key})
+        time.sleep(0.05)
+        self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "key": key})
+        return f"pressed: {key}"
+
+    def click_at(self, x: int, y: int):
+        """Click at viewport coordinates via mouse dispatch."""
+        self.client.dispatch_mouse(x, y)
+        return f"clicked at ({x},{y})"
 
     def get_page_info(self) -> Dict[str, Any]:
         """Get current page URL and title."""
