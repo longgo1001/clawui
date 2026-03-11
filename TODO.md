@@ -19,8 +19,8 @@
     - 多后端扩展：atspi (Wayland) + x11 (xdotool/XWayland) + cdp/marionette
     - 临时方案：切换用户到 X11 会话（最快）
 - [ ] 编写端到端测试脚本（包括 X11 应用控制）
-- [ ] 完善 README 使用示例（添加 X11 使用说明）
-- [ ] 配置 git 凭据以推送仓库（需用户提供信息）
+- [x] 完善 README 使用示例（添加 X11 使用说明）
+- [x] 配置 git 凭据以推送仓库（SSH key 已添加，推送成功）
 - [ ] 实现 CDP 后端支持 Chromium 浏览器
 - [ ] 实现 Marionette 后端支持 Firefox
 - [ ] 重构 backends.py 支持工具选择（未来工作）
