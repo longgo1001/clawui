@@ -91,6 +91,7 @@ def create_tools():
         {"name": "cdp_type", "description": "Type text into element by CSS selector in browser", "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}, "text": {"type": "string"}}, "required": ["selector", "text"]}},
         {"name": "cdp_eval", "description": "Evaluate JavaScript in browser page", "input_schema": {"type": "object", "properties": {"expression": {"type": "string"}}, "required": ["expression"]}},
         {"name": "cdp_page_info", "description": "Get current browser page title and URL", "input_schema": {"type": "object", "properties": {}}},
+        {"name": "cdp_click_at", "description": "Click at viewport coordinates (x,y) in browser", "input_schema": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"]}},
     ]
 
 
@@ -225,6 +226,13 @@ def execute_tool(name: str, input_data: dict) -> dict:
                 return {"type": "text", "text": "CDP not available"}
             info = {"url": cdp.get_page_url(), "title": cdp.get_page_title()}
             return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+
+        elif name == "cdp_click_at":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            result = cdp.click_at(input_data["x"], input_data["y"])
+            return {"type": "text", "text": result}
 
         else:
             return {"type": "text", "text": f"Unknown tool: {name}"}
