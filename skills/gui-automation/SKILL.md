@@ -28,7 +28,7 @@ No external AI API is needed. You ARE the AI.
 
 ```bash
 # List running GUI applications
-cd ~/projects/gui-automation && python3 -m src.main apps
+cd ~/.openclaw/workspace/skills/gui-automation && python3 -m src.main apps
 
 # Get UI element tree (structural — fast, precise)
 python3 -m src.main tree                    # all apps
@@ -41,7 +41,7 @@ python3 -m src.main screenshot -o /tmp/screen.png
 ### Python API (for direct use in exec)
 
 ```python
-import sys; sys.path.insert(0, '/home/hung/.openclaw/workspace/projects/gui-automation')
+import sys; sys.path.insert(0, '/home/hung/.openclaw/workspace/skills/gui-automation')
 
 # --- Perception ---
 from src.atspi_helper import list_applications, find_elements, get_ui_tree_summary, do_action, set_text
