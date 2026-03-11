@@ -1,58 +1,33 @@
-# TODO.md - My Task List
+# TODO.md - ClawUI Task List
 
-## Priority: HIGH (Your Direct Instructions)
-- [x] 自适应 GUI 自动化：用龙虾自身作为 AI 后端驱动（截图→分析→操作循环）
-- [x] 支持 Ollama 本地模型接入（视觉模型如 llava/bakllava）
-- [x] 支持其他模型接入（OpenAI GPT-4o、Google Gemini、任意 OpenAI-compatible API）
-- [x] CDP 后端支持 Chromium 浏览器自动化
+## ✅ Done
+- [x] AT-SPI 桌面感知（GTK/Qt 原生应用）
+- [x] X11 感知后端（xdotool/XWayland 应用）
+- [x] 感知路由层 perception.py（自动选择后端）
+- [x] CDP 后端支持 Chromium（导航、JS 执行、点击）
+- [x] CDP 真实键盘输入（Input.dispatchKeyEvent）
+- [x] CDP 坐标点击（cdp_click_at via dispatch_mouse）
+- [x] Agent 工具集：6 CDP + 10 AT-SPI/X11 工具
+- [x] 多后端模型支持（Ollama/GPT-4o/Gemini/AnyRouter）
+- [x] SSH key 配置 + GitHub 推送
+- [x] 端到端测试脚本（test_e2e_browser, test_simple_agent）
 
-## Priority: MEDIUM (Autonomous Tasks)
-- [x] 调研并解决 XWayland 与 AT-SPI 不兼容问题（影响 Firefox/Chrome 自动化）- 用户添加
-  - [x] 评估现有 backends.py 架构
-  - [x] 搜索 Freedesktop Portal for XWayland accessibility
-  - [x] 搜索 Marionette/CDP 集成方案
-  - [x] 决定实施路线（混合感知 or 切换到 X11）
-  - [x] 实现 X11 感知后端（x11_helper.py）- 基础功能完成
-  - [x] 创建感知路由层（perception.py）- 自动选择 AT-SPI 或 X11
-  - [x] 集成 perception 到 main.py - 测试通过
-  - **结论：**
-    - XWayland 应用确实无法被 AT-SPI 访问（Wayland 安全模型）
-    - Freedesktop Accessibility Portal 仅支持原生 Wayland 应用
-    - 成熟方案：浏览器原生协议（CDP for Chromium, Marionette for Firefox）
-    - 多后端扩展：atspi (Wayland) + x11 (xdotool/XWayland) + cdp/marionette
-    - 临时方案：切换用户到 X11 会话（最快）
-- [x] 编写端到端测试脚本（包括 X11 应用控制）
-  - [x] test_e2e_browser.py - 多后端测试（AT-SPI, X11, CDP）
-  - [x] run_vision_agent.py - 视觉自适应 agent 原型
-  - [x] test_simple_agent.py - 文本简化版测试
-- [x] 完善 README 使用示例（添加 X11 使用说明）
-- [x] 配置 git 凭据以推送仓库（SSH key 已添加，推送成功）
-- [x] 实现 CDP 后端支持 Chromium 浏览器
-  - [x] 创建 cdp_helper.py - CDP 客户端（导航、JS 执行）
-  - [x] 创建 cdp_backend.py - 后端抽象
-  - [x] 动态获取 WebSocket URL 并导航
-  - [ ] 集成到 perception.py （待集成）
-- [ ] 实现 Marionette 后端支持 Firefox
-- [ ] 重构 backends.py 支持工具选择（未来工作）
+## 🔨 In Progress
+- [ ] 多标签页切换（Target.activateTarget）
+- [ ] cdp_screenshot（浏览器内部截图）
 
-## Priority: LOW (When Idle)
-- [x] 审查 MEMORY.md 并更新
-- [x] 优化技能元数据
-- [x] 补充 PROGRESS.md 详细进度
+## 📋 Next Up
+- [ ] 完善 README（安装、配置、示例任务）
+- [ ] 端到端自动化验证（GitHub 仓库创建全流程）
+- [ ] 集成 CDP 到 perception.py 路由层
+- [ ] Marionette 后端支持 Firefox
+- [ ] 监控 GitHub Issues 并响应
+
+## 🧊 Backlog
+- [ ] 重构 backends.py 统一工具选择
+- [ ] 添加 wait_for_load 使用 Page.loadEventFired
+- [ ] cdp_form_fill 自动检测表单字段并填充
+- [ ] 录制/回放功能（记录操作序列）
 
 ---
-
-Last checked: 2026-03-11 08:15 (GMT+8)
-Next check: cron trigger (every 30 minutes)
-## Recent Progress (2026-03-11 15:40)
-- CDP 真实键盘输入 (Input.dispatchKeyEvent) 完成
-- 新增坐标点击 (cdp_click_at)
-- agent 支持 6 个 CDP 工具
-- 注册了持续改进的 cron 任务 (每30分钟)
-
-## Next Priorities
-- [ ] 实现多标签页切换 (Target.activateTarget)
-- [ ] 实现 cdp_screenshot 获取浏览器内部画面
-- [ ] 编写 README (安装、使用示例)
-- [ ] 完成端到端脚本 (GitHub 仓库自动创建)
-- [ ] 检查并响应 GitHub Issues
+Last updated: 2026-03-11 15:20 (GMT+8)
