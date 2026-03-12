@@ -27,6 +27,12 @@ def save_token(token: str):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(config, f, indent=2)
     
+    # Set restrictive permissions: read/write for owner only
+    try:
+        CONFIG_FILE.chmod(0o600)
+    except Exception:
+        pass  # Ignore permission errors
+    
     print(f"GitHub token saved to {CONFIG_FILE}")
 
 def load_token() -> str | None:

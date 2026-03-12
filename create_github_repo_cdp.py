@@ -6,7 +6,7 @@ GitHub repo creation automation using one of three methods, in order of preferen
 3. CDP Fallback: Uses browser automation, requiring a logged-in session.
 """
 
-import sys, os, subprocess, time, json, requests
+import sys, os, subprocess, time, json, requests, pathlib
 
 sys.path.insert(0, '/home/hung/.openclaw/workspace/skills/gui-automation')
 from src.cdp_helper import CDPClient
@@ -47,6 +47,22 @@ def is_gh_authenticated():
     except (subprocess.CalledProcessError, FileNotFoundError):
         log("gh CLI not authenticated or not installed.")
         return False
+
+def load_token_from_config() -> str | None:
+    """Load GitHub PAT from ClawUI config file (~/.config/clawui/config.json)."""
+    config_path = pathlib.Path.home() / ".config" / "clawui" / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+            token = config.get("github_pat")
+            if token:
+                log("✅ Loaded GitHub token from ClawUI config.")
+            return token
+    except Exception as e:
+        log(f"⚠️  Failed to read token from config: {e}")
+        return None
 
 def create_repo_via_gh_cli(repo_name, repo_desc):
     """Create a GitHub repo using the gh CLI."""
@@ -111,7 +127,7 @@ def main():
     log(f"=== GitHub Repo Creation ===")
     log(f"Target repository: {REPO_NAME}")
 
-    github_token = os.getenv("GITHUB_TOKEN")
+    github_token = os.getenv("GITHUB_TOKEN") or load_token_from_config()
 
     # Method 1: API Token
     if github_token:
