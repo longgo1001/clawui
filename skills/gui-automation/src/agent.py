@@ -101,6 +101,7 @@ def create_tools():
         {"name": "list_windows", "description": "List all top-level windows with title and geometry", "input_schema": {"type": "object", "properties": {}}},
         {"name": "activate_window", "description": "Activate/focus a window by title (supports partial match)", "input_schema": {"type": "object", "properties": {"title": {"type": "string"}, "title_contains": {"type": "string"}}}},
         {"name": "wait_for_window", "description": "Wait for a window with given title (or partial title) to appear, returns window info", "input_schema": {"type": "object", "properties": {"title": {"type": "string"}, "title_contains": {"type": "string"}, "timeout": {"type": "number", "default": 30}}}},
+        {"name": "wait_for_element", "description": "Wait for a UI element to appear (polls AT-SPI). Returns element info when found or timeout error.", "input_schema": {"type": "object", "properties": {"role": {"type": "string", "description": "Element role (e.g. 'push button', 'text')"}, "name": {"type": "string", "description": "Exact element name"}, "name_contains": {"type": "string", "description": "Partial name match (case-insensitive)"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}}},
         {"name": "describe_screen", "description": "Get a textual description of what's on screen using vision AI", "input_schema": {"type": "object", "properties": {"detail": {"type": "string", "enum": ["brief", "detailed"], "default": "brief"}}}},
         {"name": "click", "description": "Click at coordinates", "input_schema": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"]}},
         {"name": "double_click", "description": "Double-click", "input_schema": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"]}},
@@ -359,6 +360,30 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                     pass
                 time.sleep(1)
             return {"type": "text", "text": f"Timeout: window '{title or title_contains}' not found after {timeout}s"}
+
+        elif name == "wait_for_element":
+            role = input_data.get("role")
+            el_name = input_data.get("name")
+            name_contains = input_data.get("name_contains")
+            timeout = input_data.get("timeout", 15)
+            if not role and not el_name and not name_contains:
+                return {"type": "text", "text": "Need at least one of: role, name, name_contains"}
+            start = time.time()
+            delay = 0.5
+            while time.time() - start < timeout:
+                try:
+                    elements = find_elements(role=role, name=el_name)
+                    if name_contains:
+                        elements = [e for e in elements if name_contains.lower() in str(e).lower()]
+                    if elements:
+                        text = "\n".join(str(e) for e in elements[:10])
+                        elapsed = time.time() - start
+                        return {"type": "text", "text": f"Found {len(elements)} element(s) after {elapsed:.1f}s:\n{text}"}
+                except Exception:
+                    pass
+                time.sleep(delay)
+                delay = min(delay * 1.5, 2.0)
+            return {"type": "text", "text": f"Timeout: no element matching role={role}, name={el_name}, name_contains={name_contains} after {timeout}s"}
 
         elif name == "describe_screen":
             detail = input_data.get("detail", "brief")
