@@ -1,6 +1,7 @@
 """Agent loop - AI-driven GUI automation with hybrid AT-SPI + vision."""
 
 import json
+import re
 import os
 
 from .screenshot import take_screenshot, get_screen_size
@@ -41,6 +42,7 @@ Available tools:
 - screenshot: Take a screenshot
 - ui_tree: Get AT-SPI UI element tree for an app (or all apps)
 - find_element: Search for UI elements by role and/or name
+- vision_find_element: Find UI element by description using vision AI (experimental). Returns x, y, confidence.
 - click: Click at coordinates (x, y) or on an element
 - double_click: Double-click at coordinates
 - right_click: Right-click at coordinates
@@ -103,6 +105,7 @@ def create_tools():
         {"name": "do_action", "description": "Execute AT-SPI action on element found by role+name", "input_schema": {"type": "object", "properties": {"role": {"type": "string"}, "name": {"type": "string"}, "action": {"type": "string", "default": "click"}}}},
         {"name": "set_text", "description": "Set text in editable field (by role+name)", "input_schema": {"type": "object", "properties": {"role": {"type": "string"}, "name": {"type": "string"}, "text": {"type": "string"}}, "required": ["text"]}},
         {"name": "wait", "description": "Wait seconds", "input_schema": {"type": "object", "properties": {"seconds": {"type": "number"}}, "required": ["seconds"]}},
+        {"name": "vision_find_element", "description": "Find UI element by description using vision AI (experimental)", "input_schema": {"type": "object", "properties": {"description": {"type": "string"}}, "required": ["description"]}},
         # CDP tools (browser automation)
         {"name": "cdp_navigate", "description": "Navigate browser to URL (requires Chromium with --remote-debugging-port=9222)", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
         {"name": "cdp_click", "description": "Click element by CSS selector in browser", "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}}, "required": ["selector"]}},
@@ -234,6 +237,40 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
         elif name == "wait":
             time.sleep(input_data["seconds"])
             return {"type": "text", "text": f"Waited {input_data['seconds']}s"}
+
+        elif name == "vision_find_element":
+            description = input_data.get("description", "").strip()
+            if not description:
+                return {"type": "text", "text": "Missing 'description' parameter"}
+            try:
+                from .vision_backend import VisionBackend
+            except ImportError:
+                return {"type": "text", "text": "VisionBackend not available"}
+            img = take_screenshot()
+            if not img:
+                return {"type": "text", "text": "Failed to take screenshot"}
+            vb = VisionBackend()
+            prompt = f"Locate the UI element that matches: '{description}'. Return JSON with x, y (center coordinates), and confidence (0-1)."
+            try:
+                resp = vb.chat([
+                    {"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}}
+                    ]}
+                ], tools=[], system="You are a vision assistant that returns only JSON with x, y, confidence keys.")
+                text = resp.get("text", "").strip()
+                json_match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL) or re.search(r'\{.*\}', text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1) if '```' in text else json_match.group(0)
+                    data = json.loads(json_str)
+                    x = data.get("x")
+                    y = data.get("y")
+                    conf = data.get("confidence", 0.5)
+                    if x is not None and y is not None:
+                        return {"type": "dict", "x": x, "y": y, "confidence": conf, "raw": text}
+                return {"type": "text", "text": f"Vision response could not be parsed: {text}"}
+            except Exception as e:
+                return {"type": "text", "text": f"Vision error: {e}"}
 
         # CDP tools
         elif name == "cdp_navigate":
