@@ -232,47 +232,122 @@ class CDPClient:
         return None
 
 
-def launch_chromium_with_cdp(port: int = 9222, url: str = "about:blank") -> subprocess.Popen:
-    """Launch Chromium with remote debugging enabled."""
-    # Try multiple browser names
-    for browser in ['chromium-browser', 'chromium', 'google-chrome', 'google-chrome-stable']:
+# Global registry to keep launched browser processes alive
+_launched_browser_processes = {}
+
+
+def launch_chromium_with_cdp(port: int = 9222, url: str = "about:blank") -> Optional[subprocess.Popen]:
+    """Launch Chromium/Chrome with remote debugging enabled.
+
+    Tries multiple detection strategies in order:
+    1. Common binary names in PATH (chromium-browser, chromium, google-chrome, google-chrome-stable, chrome)
+    2. Snap installations (snap run chromium)
+    3. Flatpak installations (flatpak run org.chromium.Chromium)
+    4. Headless variants (for environments without DISPLAY)
+    5. Try with --no-sandbox for restricted environments (snap)
+
+    Returns the Popen object if successful, None otherwise.
+    """
+    # Base arguments common to all launches
+    base_args = [
+        f'--remote-debugging-port={port}',
+        '--remote-allow-origins=*',
+        '--no-first-run',
+        '--no-default-browser-check',
+        url
+    ]
+
+    # Candidate commands grouped by strategy
+    candidates = [
+        # Direct binaries in PATH (with display)
+        ['chromium-browser'] + base_args,
+        ['chromium'] + base_args,
+        ['google-chrome'] + base_args,
+        ['google-chrome-stable'] + base_args,
+        ['chrome'] + base_args,
+        # Snap
+        ['snap', 'run', 'chromium'] + base_args,
+        # Flatpak
+        ['flatpak', 'run', 'org.chromium.Chromium'] + base_args,
+        # Headless variants (for headless/cron environments)
+        ['chromium-browser', '--headless=new'] + base_args,
+        ['chromium', '--headless=new'] + base_args,
+        ['google-chrome', '--headless=new'] + base_args,
+        ['google-chrome-stable', '--headless=new'] + base_args,
+        ['chrome', '--headless=new'] + base_args,
+        # Snap headless
+        ['snap', 'run', 'chromium', '--headless=new'] + base_args,
+        # With --no-sandbox (for snap confinement issues)
+        ['snap', 'run', 'chromium', '--no-sandbox'] + base_args,
+        ['chromium-browser', '--no-sandbox'] + base_args,
+    ]
+
+    for cmd in candidates:
         try:
-            proc = subprocess.Popen([
-                browser,
-                f'--remote-debugging-port={port}',
-                '--remote-allow-origins=*',
-                '--no-first-run',
-                '--no-default-browser-check',
-                url
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(3)  # Wait for browser to start
-            return proc
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Wait a bit for browser to start and open CDP endpoint
+            time.sleep(3)
+            if _is_port_listening(port):
+                _launched_browser_processes[port] = proc
+                return proc
+            else:
+                # Port not open yet, wait a bit more
+                time.sleep(2)
+                if _is_port_listening(port):
+                    _launched_browser_processes[port] = proc
+                    return proc
+                # Not ready, terminate and try next
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                except:
+                    pass
         except FileNotFoundError:
             continue
+        except Exception:
+            continue
+
     return None
 
 
-def launch_firefox_with_marionette(port: int = 2828) -> subprocess.Popen:
-    """Launch Firefox with Marionette enabled."""
+def _is_port_listening(port: int, host: str = "127.0.0.1") -> bool:
+    """Check if something is listening on the given port."""
     try:
-        proc = subprocess.Popen([
-            'firefox', '--marionette', f'--marionette-port={port}'
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(3)
-        return proc
-    except FileNotFoundError:
-        return None
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except:
+        return False
 
 
 def get_or_create_cdp_client(port: int = 9222) -> Optional[CDPClient]:
-    """Get existing CDP connection or launch browser."""
+    """Get existing CDP connection or launch a browser automatically.
+
+    If a browser is already running with CDP on the specified port, returns a client.
+    Otherwise, attempts to launch a suitable browser and returns a client connected to it.
+    """
     client = CDPClient(port=port)
     if client.is_available():
         return client
-    # Try launching Chromium
+
+    # Try to launch a browser
     proc = launch_chromium_with_cdp(port=port)
     if proc:
+        # Wait a moment for CDP to be ready
         time.sleep(2)
         if client.is_available():
             return client
+        # Additional wait if needed
+        time.sleep(2)
+        if client.is_available():
+            return client
+
     return None
+
+
+def get_browser_process(port: int = 9222) -> Optional[subprocess.Popen]:
+    """Get the Popen object for a browser launched by this module (if any)."""
+    return _launched_browser_processes.get(port)
+
