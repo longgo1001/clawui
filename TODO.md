@@ -24,6 +24,7 @@
   - 改进 e2e 测试：自动启动 Firefox（`test_e2e.py` 已更新）
 - [x] 完善 README：添加故障排除和最佳实践
 - [x] Firefox Marionette 生产环境部署验证（本地测试通过）
+- [x] **X11 跨工作区检测**：移除 `--onlyvisible` 限制，`list_windows()` 现在能检测所有工作区的窗口，提升对 XWayland 应用的可靠性
 
 ## 🔨 In Progress / Partial
 - [x] 集成 CDP/Marionette 到 perception.py 路由层（让 agent 自动感知并选择后端）
