@@ -30,7 +30,7 @@
 - [x] 自动登录机制（已实现 GITHUB_TOKEN，待 gh auth 集成）
 
 ## 📋 Next Up
-- [ ] 响应 GitHub Issues（如有）(Checked 2026-03-12: no issues)
+- [x] 响应 GitHub Issues（如有）(Checked 2026-03-12: no issues)
 
 ---
 Last updated: 2026-03-12 03:00 (UTC+8)

@@ -8,12 +8,13 @@ to achieve its goal without manual intervention, assuming a one-time setup
 for GitHub authentication.
 
 **Workflow:**
-1.  Checks for GitHub CLI (`gh`) authentication.
-2.  If authenticated, creates a new public repository using `gh repo create`.
+1.  Checks for GitHub CLI (`gh`) authentication OR a GitHub token in the environment or config.
+2.  If authenticated (via gh or token), creates a new public repository.
 3.  Launches Chromium via CDP (`cdp_helper`).
 4.  Navigates the browser to the new repository's URL to verify its creation via UI.
 5.  Clones the new repository into a temporary directory.
 6.  Creates a test file, commits it, and pushes it to the new repository.
+7.  Cleans up by deleting the test repository.
 """
 
 import subprocess
@@ -21,6 +22,9 @@ import time
 import os
 import sys
 import datetime
+import json
+import pathlib
+import requests
 
 # Ensure the project source is in the path
 # Adjust this path if your project structure is different
@@ -37,11 +41,74 @@ except ImportError:
 REPO_NAME = "clawui-e2e-demo-" + str(int(time.time()))
 TEST_FILE = "hello_clawui.txt"
 TEST_CONTENT = f"This repository was created automatically by the clawui agent at {datetime.datetime.now()}\n"
-GH_OWNER = "longgo1001" 
+GH_OWNER = "longgo1001"
+
+CONFIG_PATH = pathlib.Path.home() / ".config" / "clawui" / "config.json" 
 
 def log(msg):
     """Simple logger."""
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}")
+
+def load_token_from_config() -> str | None:
+    """Load GitHub PAT from ClawUI config file."""
+    if not CONFIG_PATH.exists():
+        return None
+    try:
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+            token = config.get("github_pat")
+            if token:
+                log("✅ Loaded GitHub token from config.")
+            return token
+    except Exception as e:
+        log(f"⚠️  Failed to read token from config: {e}")
+        return None
+
+def check_gh_auth():
+    """Check if the user is authenticated with the GitHub CLI."""
+    log("Checking GitHub CLI authentication status...")
+    try:
+        run_cmd(['gh', 'auth', 'status'])
+        log("✅ GitHub CLI is authenticated.")
+        return True
+    except subprocess.CalledProcessError:
+        log("⚠️ GitHub CLI not authenticated.")
+        return False
+
+def create_repo_via_api(token, repo_name, repo_desc):
+    """Create a GitHub repo using the API."""
+    log("Attempting to create repo via GitHub API...")
+    url = "https://api.github.com/user/repos"
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+    data = {"name": repo_name, "description": repo_desc, "private": False}
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=15)
+        if response.status_code == 201:
+            log("✅ Repo created successfully via API.")
+            return f"https://github.com/{GH_OWNER}/{repo_name}"
+        else:
+            log(f"❌ API request failed: {response.status_code} {response.text}")
+            return None
+    except requests.RequestException as e:
+        log(f"❌ API request error: {e}")
+        return None
+
+def delete_repo_via_api(token, repo_name):
+    """Delete a GitHub repo using the API."""
+    log(f"Deleting repository '{repo_name}' via API...")
+    url = f"https://api.github.com/repos/{GH_OWNER}/{repo_name}"
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+    try:
+        response = requests.delete(url, headers=headers, timeout=15)
+        if response.status_code == 204:
+            log("✅ Repository deleted successfully via API.")
+            return True
+        else:
+            log(f"❌ API delete failed: {response.status_code} {response.text}")
+            return False
+    except requests.RequestException as e:
+        log(f"❌ API delete error: {e}")
+        return False
 
 def run_cmd(cmd, check=True, **kwargs):
     """Executes a shell command."""
@@ -137,23 +204,63 @@ def clone_commit_push(repo_url):
 def main():
     """Main execution loop."""
     log("Starting fully automated end-to-end test for `clawui`...")
-    if not check_gh_auth():
-        return 2 
-    
-    repo_url = create_repo_with_gh()
+
+    # Try to get a token: env var first, then config file.
+    token = os.getenv("GITHUB_TOKEN") or load_token_from_config()
+    creation_method = None  # 'api' or 'gh'
+    repo_url = None
+
+    # Attempt API method if token is available
+    if token:
+        repo_url = create_repo_via_api(token, REPO_NAME, REPO_DESC)
+        if repo_url:
+            creation_method = 'api'
+        else:
+            log("❌ API method failed.")
+            token = None  # clear token to try gh next
+
+    # If API failed or no token, try gh CLI
+    if not token:
+        if check_gh_auth():
+            repo_url = create_repo_with_gh()
+            if repo_url:
+                creation_method = 'gh'
+            else:
+                log("❌ Failed to create repository using `gh`.")
+                return 1
+        else:
+            log("❌ No GitHub authentication available (neither GITHUB_TOKEN nor gh CLI auth).")
+            log("   Please set GITHUB_TOKEN or run 'gh auth login'.")
+            return 2
+
     if not repo_url:
+        log("❌ Failed to obtain repository URL.")
         return 1
-        
+
     if not verify_repo_in_browser(repo_url):
         log("⚠️ Browser verification failed, but repo likely exists. Proceeding with git.")
-        
+
     if not clone_commit_push(repo_url):
+        log("❌ Git operations failed.")
+        # Still attempt cleanup before returning
+        if creation_method == 'api':
+            delete_repo_via_api(token, REPO_NAME)
+        elif creation_method == 'gh':
+            run_cmd(['gh', 'repo', 'delete', REPO_NAME, '--yes'])
         return 1
 
     log("✅✅✅ Full end-to-end test completed successfully! ✅✅✅")
+
     # Clean up the created repo
     log(f"Cleaning up by deleting repository '{REPO_NAME}'...")
-    run_cmd(['gh', 'repo', 'delete', REPO_NAME, '--yes'])
+    if creation_method == 'api':
+        if not delete_repo_via_api(token, REPO_NAME):
+            log("⚠️ API deletion failed; you may need to delete the repo manually.")
+    elif creation_method == 'gh':
+        run_cmd(['gh', 'repo', 'delete', REPO_NAME, '--yes'])
+    else:
+        log("⚠️ Unknown creation method; skipping automatic deletion.")
+
     return 0
 
 if __name__ == "__main__":
