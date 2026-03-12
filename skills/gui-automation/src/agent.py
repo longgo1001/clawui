@@ -144,6 +144,10 @@ def create_tools():
         {"name": "record_stop", "description": "Stop recording and save to file", "input_schema": {"type": "object", "properties": {"filepath": {"type": "string", "description": "Save path (default: recordings/<name>.json)"}}}},
         {"name": "replay", "description": "Replay a recorded script", "input_schema": {"type": "object", "properties": {"filepath": {"type": "string", "description": "Path to recording JSON"}, "speed": {"type": "number", "description": "Playback speed multiplier (default 1.0)"}, "dry_run": {"type": "boolean", "description": "Preview without executing"}}, "required": ["filepath"]}},
         {"name": "list_recordings", "description": "List available recorded scripts", "input_schema": {"type": "object", "properties": {}}},
+        # OCR-based text detection (fast, CPU-friendly)
+        {"name": "find_text", "description": "Find text on screen using OCR (RapidOCR/Tesseract). Returns list of occurrences with center coordinates and scores. Supports partial match.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to find (case-insensitive partial match)"}}, "required": ["text"]}},
+        # Template-based clicking (fallback when AT-SPI/vision not available)
+        {"name": "click_template", "description": "Click on a UI element based on a learned template. Input: app (template name), element (key in template), optional: offset_x/y (pixel offset)", "input_schema": {"type": "object", "properties": {"app": {"type": "string"}, "element": {"type": "string"}}, "optional": ["offset_x", "offset_y"]}},
         # High-level task automation (B)
         {"name": "plan_and_execute", "description": "Given a natural language task, autonomously break it down into steps and execute using available tools. Returns final result and summary.", "input_schema": {"type": "object", "properties": {"task": {"type": "string", "description": "Natural language description of the task to accomplish"}}, "required": ["task"]}},
     ]
@@ -761,6 +765,71 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 return {"type": "text", "text": "Marionette not available"}
             ok = mc.switch_to_window(input_data["handle"])
             return {"type": "text", "text": f"Switched: {ok}"}
+
+        # OCR-based tools
+        elif name == "find_text":
+            # Take screenshot
+            img_data = take_screenshot()
+            if not img_data:
+                return {"type": "text", "text": "Failed to take screenshot"}
+            try:
+                from .ocr_tool import ocr_find_text
+                matches = ocr_find_text(img_data, input_data["text"])
+                return {"type": "dict", "matches": matches, "count": len(matches), "text": f"Found {len(matches)} occurrence(s) of '{input_data['text']}'"}
+            except Exception as e:
+                return {"type": "text", "text": f"OCR error: {e}"}
+
+        elif name == "click_template":
+            app_name = input_data.get("app")
+            element_name = input_data.get("element")
+            if not app_name or not element_name:
+                return {"type": "text", "text": "Missing 'app' or 'element'"}
+            try:
+                import json
+                template_path = os.path.join(os.path.dirname(__file__), 'templates', f'{app_name}.json')
+                if not os.path.exists(template_path):
+                    return {"type": "text", "text": f"Template not found: {template_path}"}
+                with open(template_path, 'r', encoding='utf-8') as f:
+                    template = json.load(f)
+                
+                elements = template.get('elements', {})
+                if element_name not in elements:
+                    available = ', '.join(elements.keys())
+                    return {"type": "text", "text": f"Element '{element_name}' not in template. Available: {available}"}
+                
+                rel_pos = elements[element_name]
+                rel_x, rel_y = rel_pos['x'], rel_pos['y']
+                
+                # Find target window
+                from .x11_helper import list_windows as x11_list_windows
+                windows = x11_list_windows()
+                win_title = template.get('window_title', '')
+                target_win = None
+                for w in windows:
+                    if win_title.lower() in w.title.lower():
+                        target_win = w
+                        break
+                if not target_win and win_title:
+                    for w in windows:
+                        if app_name.lower() in w.title.lower():
+                            target_win = w
+                            break
+                if not target_win:
+                    return {"type": "text", "text": f"Window for app '{app_name}' not found"}
+                
+                click_x = target_win.x + int(rel_x * target_win.width)
+                click_y = target_win.y + int(rel_y * target_win.height)
+                
+                offset_x = input_data.get("offset_x", 0)
+                offset_y = input_data.get("offset_y", 0)
+                click_x += offset_x
+                click_y += offset_y
+                
+                from .actions import click
+                click(click_x, click_y)
+                return {"type": "dict", "x": click_x, "y": click_y, "target_window": target_win.title, "text": f"Clicked {element_name} at ({click_x},{click_y})"}
+            except Exception as e:
+                return {"type": "text", "text": f"click_template error: {e}"}
 
         # Record/Replay tools
         elif name == "record_start":
