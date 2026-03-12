@@ -55,10 +55,11 @@ def _get_window_class(wid: int) -> str:
 
 
 def list_windows() -> List[X11Window]:
-    """List all visible X11 windows with geometry."""
+    """List all X11 windows with geometry (including all workspaces)."""
     windows = []
-    # Get all window ids
-    ids = _run_cmd(['xdotool', 'search', '--onlyvisible', '--name', '']).splitlines()
+    # Get all window ids (no --onlyvisible to include windows on all workspaces)
+    # Note: This may include minimized/iconified windows; they can still be activated.
+    ids = _run_cmd(['xdotool', 'search', '--name', '']).splitlines()
     for wid in ids:
         try:
             wid_int = int(wid)
