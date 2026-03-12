@@ -12,54 +12,78 @@ from typing import List, Dict, Any
 sys.path.insert(0, os.path.dirname(__file__))
 
 
+# Global cache for the OCR engine
+_ocr_engine = None
+
+def get_ocr_engine():
+    """Initializes and returns a singleton OCR engine instance."""
+    global _ocr_engine
+    if _ocr_engine is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            _ocr_engine = RapidOCR()
+        except ImportError:
+            # This path is for the Tesseract fallback, which doesn't need a global engine
+            _ocr_engine = "TESSERACT_FALLBACK" 
+    return _ocr_engine
+
 def ocr_find_text(image_data: str, text: str, threshold: float = 0.6) -> List[Dict[str, Any]]:
     """
     Find occurrences of `text` in screenshot via OCR.
     Returns list of matches: [{text, bbox: [[x1,y1],[x2,y2],...], center: [x,y], score}]
     """
-    # Try RapidOCR first
-    try:
-        from rapidocr_onnxruntime import RapidOCR
-        ocr = RapidOCR()
-        # image_data is base64 string without data: prefix
-        if image_data.startswith('data:'):
-            import base64
-            header, b64 = image_data.split(',', 1)
-            image_bytes = base64.b64decode(b64)
-        else:
-            import base64
-            image_bytes = base64.b64decode(image_data)
-        
-        result = ocr(image_bytes)
-        # result format: (bboxes, scores, texts)
-        matches = []
-        if result:
-            bboxes, scores, texts = result
-            for box, score, ocr_text in zip(bboxes, scores, texts):
-                if text.lower() in ocr_text.lower():
-                    # Compute center
-                    xs = [p[0] for p in box]
-                    ys = [p[1] for p in box]
-                    center = [int(sum(xs)/len(xs)), int(sum(ys)/len(ys))]
-                    matches.append({
-                        "text": ocr_text,
-                        "bbox": box.tolist() if hasattr(box, 'tolist') else box,
-                        "center": center,
-                        "score": float(score)
-                    })
-        return matches
-    except Exception as e:
-        print(f"[ocr_find_text] RapidOCR failed: {e}")
-        pass
+    ocr = get_ocr_engine()
 
+    # Try RapidOCR first
+    if ocr != "TESSERACT_FALLBACK":
+        try:
+            # image_data is base64 string without data: prefix
+            if image_data.startswith('data:'):
+                import base64
+                header, b64 = image_data.split(',', 1)
+                image_bytes = base64.b64decode(b64)
+            else:
+                import base64
+                image_bytes = base64.b64decode(image_data)
+            
+            result, _ = ocr(image_bytes)
+            matches = []
+            if result:
+                for box, ocr_text, score in result:
+                    if text.lower() in ocr_text.lower() and score >= threshold:
+                        # Compute center
+                        xs = [p[0] for p in box]
+                        ys = [p[1] for p in box]
+                        center = [int(sum(xs)/len(xs)), int(sum(ys)/len(ys))]
+                        matches.append({
+                            "text": ocr_text,
+                            "bbox": box,
+                            "center": center,
+                            "score": float(score)
+                        })
+            return matches
+        except Exception as e:
+            print(f"[ocr_find_text] RapidOCR failed: {e}")
+            # Fall through to Tesseract if RapidOCR errors out
+            pass
+    
     # Fallback to Tesseract
     try:
+        # Ensure image_bytes is defined for Tesseract fallback
+        if 'image_bytes' not in locals():
+            if image_data.startswith('data:'):
+                import base64
+                header, b64 = image_data.split(',', 1)
+                image_bytes = base64.b64decode(b64)
+            else:
+                import base64
+                image_bytes = base64.b64decode(image_data)
+
         import subprocess
         import tempfile
         # Save image to temp file
         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            tmp.write(image_bytes if 'image_bytes' in locals() else 
-                     (base64.b64decode(image_data.split(',',1)[1] if ',' in image_data else image_data)))
+            tmp.write(image_bytes)
             tmp_path = tmp.name
         
         # Run tesseract with TSV output
