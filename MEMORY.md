@@ -136,6 +136,9 @@
 
 ## 技术细节
 - **click_template**: 加载 `templates/<app>.json`, 匹配窗口, 计算绝对坐标并点击
+- **find_text**: 基于 OCR (RapidOCR/Tesseract) 的文字查找工具, 返回坐标列表
+- **ocr_tool.py**: 新增 OCR 后端实现, 优先使用 RapidOCR (快 ~150ms), 回退到 Tesseract (~500ms)
 - **环境要求**: 自动化需在图形会话运行 (DISPLAY/WAYLAND_DISPLAY/DBUS_SESSION_BUS_ADDRESS)
-- **提交**: ClawUI `a99a3b9` -> `2599b31` (工具增强), 本仓库 `2599b31` (更新子模块)
+- **依赖**: OCR 功能需要手动安装 rapidocr-onnxruntime (推荐) 或 tesseract-ocr + tesseract-ocr-chi-sim
+- **提交**: ClawUI `5fa417b` -> `7d02a3d` (feat: OCR tools + click_template), 本仓库 `49c5222` (docs)
 - **系统健康检查**: 新增 `tools/check_system_health.py`，用于验证所有自动化后端（AT-SPI, X11, CDP, Marionette, Vision）的可用性和运行状态。
