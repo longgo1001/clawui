@@ -24,22 +24,33 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
 def method_api_token():
-    """Try GitHub API using GITHUB_TOKEN."""
+    """Try GitHub API with token if present, otherwise unauthenticated mode."""
     token = os.getenv('GITHUB_TOKEN', '').strip()
-    if not token:
-        return False, "GITHUB_TOKEN not set"
     repo = "longgo1001/clawui"
     url = f"https://api.github.com/repos/{repo}/issues?state=open&per_page=50"
+    cmd = [
+        'curl', '-sS',
+        '-H', 'Accept: application/vnd.github+json',
+        '-H', 'User-Agent: clawui-issues-checker',
+    ]
+    if token:
+        cmd += ['-H', f'Authorization: Bearer {token}']
+    cmd.append(url)
+
     try:
-        result = subprocess.run(
-            ['curl', '-s', '-H', f'Authorization: token {token}', url],
-            capture_output=True, text=True, timeout=10, check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, check=True)
         data = json.loads(result.stdout)
-        print(f"GitHub API: {len(data)} open issues")
-        for i, issue in enumerate(data[:10], 1):
-            print(f"#{issue['number']}: {issue['title'][:70]}")
-        return True, "API success"
+        if isinstance(data, dict) and data.get('message'):
+            return False, f"API error: {data.get('message')}"
+        if not isinstance(data, list):
+            return False, "API returned unexpected payload"
+
+        issues = [i for i in data if 'pull_request' not in i]
+        print(f"GitHub API: {len(issues)} open issues")
+        for issue in issues[:10]:
+            print(f"#{issue['number']}: {issue['title'][:100]}")
+        mode = "token" if token else "unauthenticated"
+        return True, f"API success ({mode})"
     except subprocess.CalledProcessError as e:
         return False, f"API curl failed: {e}"
     except json.JSONDecodeError as e:
@@ -68,7 +79,7 @@ def method_cdp_fallback():
     """Use CDP to navigate, screenshot, and vision-extract issues."""
     try:
         # Use the proper import path for the CDP client from the skill
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ClawUI/skills/gui-automation'))
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'skills/gui-automation'))
         from src.cdp_helper import get_or_create_cdp_client
     except ImportError as e:
         return False, f"CDP import failed: {e}"
@@ -96,7 +107,7 @@ def method_cdp_fallback():
         # Attempt vision-based extraction
         try:
             # Reuse the skill's vision backend if available
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ClawUI/skills/gui-automation'))
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'skills/gui-automation'))
             from src.vision_backend import VisionBackend
             vb = VisionBackend()
             prompt = "List all open GitHub issues from this screenshot. For each issue, output exactly: '#<number>: <title>' on its own line. If none, say 'No open issues.'"
