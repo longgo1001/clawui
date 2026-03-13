@@ -588,15 +588,37 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            result = cdp.click_element(input_data["selector"])
-            return {"type": "text", "text": f"Clicked '{input_data['selector']}': {result}"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    result = cdp.click_element(input_data["selector"])
+                    return {"type": "text", "text": f"Clicked '{input_data['selector']}': {result}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_click error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP click failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_type":
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            result = cdp.type_in_element(input_data["selector"], input_data["text"])
-            return {"type": "text", "text": f"Typed into '{input_data['selector']}': {result}"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    result = cdp.type_in_element(input_data["selector"], input_data["text"])
+                    return {"type": "text", "text": f"Typed into '{input_data['selector']}': {result}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_type error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP type failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_eval":
             cdp = _get_cdp()
@@ -616,8 +638,19 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            cdp.dispatch_mouse(input_data["x"], input_data["y"])
-            return {"type": "text", "text": f"Clicked at ({input_data['x']}, {input_data['y']})"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    cdp.dispatch_mouse(input_data["x"], input_data["y"])
+                    return {"type": "text", "text": f"Clicked at ({input_data['x']}, {input_data['y']})"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_click_at error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP click_at failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_list_tabs":
             cdp = _get_cdp()
