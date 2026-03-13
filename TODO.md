@@ -33,7 +33,7 @@
 - [x] 自动登录机制（已实现 GITHUB_TOKEN，待 gh auth 集成）
 
 ## 📋 Next Up
-- [x] 响应 GitHub Issues（如有）(Checked 2026-03-13: could not check - missing GITHUB_TOKEN/gh auth)
+- [x] 响应 GitHub Issues（如有）(Updated 2026-03-13: could not authenticate gh CLI; GITHUB_TOKEN integration incomplete)
 
 ---
 Last updated: 2026-03-13

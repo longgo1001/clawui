@@ -347,6 +347,59 @@ class CDPClient:
         # Now dispatch key events one by one
         self.dispatch_key(text)
 
+    def wait_for_selector(self, selector: str, timeout: float = 15, poll_interval: float = 0.3) -> Dict:
+        """Wait until a CSS selector matches an element in the page.
+
+        Returns dict with 'found', 'elapsed', and 'text' (innerText of first match).
+        """
+        start = time.time()
+        while True:
+            elapsed = time.time() - start
+            try:
+                result = self.evaluate(
+                    f'(function(){{var el=document.querySelector({json.dumps(selector)});'
+                    f'if(el)return{{found:true,text:el.innerText||"",tag:el.tagName}};'
+                    f'return{{found:false}}}})()'
+                )
+                if isinstance(result, dict) and result.get('found'):
+                    result['elapsed'] = round(elapsed, 2)
+                    return result
+            except Exception:
+                pass
+            if elapsed >= timeout:
+                return {"found": False, "elapsed": round(elapsed, 2), "error": f"Timeout after {timeout}s waiting for '{selector}'"}
+            time.sleep(poll_interval)
+
+    def wait_for_navigation(self, url_contains: str = None, title_contains: str = None,
+                            timeout: float = 15, poll_interval: float = 0.3) -> Dict:
+        """Wait until the page URL or title matches a condition.
+
+        Returns dict with 'matched', 'url', 'title', 'elapsed'.
+        """
+        start = time.time()
+        while True:
+            elapsed = time.time() - start
+            try:
+                url = self.get_page_url()
+                title = self.get_page_title()
+                matched = False
+                if url_contains and url_contains in (url or ''):
+                    matched = True
+                if title_contains and title_contains in (title or ''):
+                    matched = True
+                if not url_contains and not title_contains:
+                    matched = True  # no condition = just wait for any load
+                if matched:
+                    return {"matched": True, "url": url, "title": title, "elapsed": round(elapsed, 2)}
+            except Exception:
+                pass
+            if elapsed >= timeout:
+                return {"matched": False, "url": url if 'url' in dir() else None,
+                        "title": title if 'title' in dir() else None,
+                        "elapsed": round(elapsed, 2),
+                        "error": f"Timeout after {timeout}s"}
+            time.sleep(poll_interval)
+
     def take_screenshot(self) -> Optional[str]:
         """Take a screenshot of the browser page, returns base64 PNG."""
         result = self._raw_cdp("Page.captureScreenshot", {"format": "png"})

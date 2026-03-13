@@ -104,6 +104,8 @@ Browser tools (CDP - requires Chromium with --remote-debugging-port=9222):
 - cdp_activate_tab: Switch to a tab by target ID
 - cdp_close_tab: Close a tab by target ID
 - cdp_screenshot: Take a screenshot of the browser page
+- cdp_wait_for_selector: Wait until a CSS selector matches an element (avoids race conditions)
+- cdp_wait_for_navigation: Wait until URL/title changes after navigation
 
 Browser tools (Marionette - requires Firefox with --marionette):
 - ff_navigate: Navigate Firefox to URL
@@ -163,6 +165,8 @@ def create_tools():
         {"name": "cdp_activate_tab", "description": "Switch to a browser tab by target ID", "input_schema": {"type": "object", "properties": {"target_id": {"type": "string"}}, "required": ["target_id"]}},
         {"name": "cdp_close_tab", "description": "Close a browser tab by target ID", "input_schema": {"type": "object", "properties": {"target_id": {"type": "string"}}, "required": ["target_id"]}},
         {"name": "cdp_screenshot", "description": "Take a screenshot of the browser page", "input_schema": {"type": "object", "properties": {}}},
+        {"name": "cdp_wait_for_selector", "description": "Wait until a CSS selector matches an element in the browser page. Returns match info or timeout error.", "input_schema": {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector to wait for"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}, "required": ["selector"]}},
+        {"name": "cdp_wait_for_navigation", "description": "Wait until browser URL contains a string or title contains a string. Useful after clicking links/submitting forms.", "input_schema": {"type": "object", "properties": {"url_contains": {"type": "string", "description": "Wait until URL contains this string"}, "title_contains": {"type": "string", "description": "Wait until title contains this string"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}}},
         # Marionette tools (Firefox automation)
         {"name": "ff_navigate", "description": "Navigate Firefox to URL (requires firefox --marionette)", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
         {"name": "ff_click", "description": "Click element by CSS selector in Firefox", "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}}, "required": ["selector"]}},
@@ -801,6 +805,26 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         delay *= 2
                         continue
                     return {"type": "text", "text": f"CDP screenshot failed after {max_attempts} attempts: {e}"}
+
+        elif name == "cdp_wait_for_selector":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            selector = inp.get("selector", "")
+            timeout = inp.get("timeout", 15)
+            result = cdp.client.wait_for_selector(selector, timeout=timeout)
+            return {"type": "text", "text": json.dumps(result)}
+
+        elif name == "cdp_wait_for_navigation":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            result = cdp.client.wait_for_navigation(
+                url_contains=inp.get("url_contains"),
+                title_contains=inp.get("title_contains"),
+                timeout=inp.get("timeout", 15)
+            )
+            return {"type": "text", "text": json.dumps(result)}
 
         # Marionette (Firefox) tools
         elif name == "ff_navigate":

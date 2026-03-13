@@ -155,6 +155,7 @@
    - `result` 变量名冲突（后端响应与工具结果混淆）
 8. **持续集成验证**: 所有自动 cron 任务通过，GitHub Issues 为零，工作区保持干净。
 9. **Google 注册自动化测试**: 演示脚本已更新，但由于 exec 环境限制，必须在用户的图形终端中手动运行以验证完整流程。提供了测试脚本供用户直接运行。
+10. **新增 `wait_for_text` 工具** - 基于 OCR 的文本等待功能，轮询检测屏幕上的指定文本出现，扩展了自动化可靠性至浏览器自定义控件和动态内容场景。
 
 ## 待办
 - **测试模板系统**: 手动运行 `learn_template.py wechat_devtools` 记录"新建项目"等按钮坐标, 然后用 `click_template` 实现完整自动化
@@ -179,3 +180,12 @@
 - **Git 子模块工作流**: 修改子模块内部 → 在子模块内提交 → 拉取远程并变基 → 推送子模块 → 更新父仓库 gitlink → 推送父仓库，避免 diverged 分支冲突
 - **GUI 环境继承**: 从用户图形会话进程读取环境变量（DISPLAY/WAYLAND_DISPLAY/XAUTHORITY）以解决非交互式环境中的 GUI 连接问题
 - **工具注册去重**: 定期审计工具注册列表，避免重复注册导致工具数量统计错误和代码冗余
+
+## Heartbeat 更新 (2026-03-13 21:30)
+- TODO.md 已全部完成，当前无可安全自动执行的新任务。
+- 例行检查确认：工作区存在待提交改动（ClawUI 子模块、MEMORY.md、TODO.md、memory/2026-03-13.md），需后续按子模块流程统一整理提交。
+
+## 新问题记录 (2026-03-13 夜间)
+- 安装 Wine 时触发系统包依赖异常：`nvidia-driver-550` 依赖 `nvidia-dkms-550` 未配置，导致 `apt install wine wine64 wine32` 以 code 100 失败。
+- 结论：当前机器的包管理状态有“半配置”NVIDIA 驱动问题，后续安装新软件前需先 `sudo dpkg --configure -a` / 修复 NVIDIA 依赖链。
+- 微信开发者工具执行失败：通过 Wine 启动 `wechatdevtools.exe` 报错“ShellExecuteEx 失败: 找不到文件”，优先排查 exe 路径/文件完整性，再看 Wine 兼容与依赖。
