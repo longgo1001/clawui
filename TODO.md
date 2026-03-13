@@ -26,6 +26,7 @@
 - [x] Firefox Marionette 生产环境部署验证（本地测试通过）
 - [x] **X11 跨工作区检测**：移除 `--onlyvisible` 限制，`list_windows()` 现在能检测所有工作区的窗口，提升对 XWayland 应用的可靠性
 - [x] **wait_for_element 工具**：实现元素等待机制（超时+轮询），提升自动化可靠性，避免竞态条件
+- [x] **wait_for_text 工具**：基于 OCR 的文本等待（轮询直到屏幕出现指定文本），扩展可靠性至浏览器和自定义控件
 
 ## 🔨 In Progress / Partial
 - [x] 集成 CDP/Marionette 到 perception.py 路由层（让 agent 自动感知并选择后端）
