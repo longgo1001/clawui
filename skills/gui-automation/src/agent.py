@@ -624,15 +624,37 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            result = cdp.evaluate(input_data["expression"])
-            return {"type": "text", "text": f"JS result: {json.dumps(result, ensure_ascii=False)[:500]}"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    result = cdp.evaluate(input_data["expression"])
+                    return {"type": "text", "text": f"JS result: {json.dumps(result, ensure_ascii=False)[:500]}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_eval error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP eval failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_page_info":
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            info = {"url": cdp.get_page_url(), "title": cdp.get_page_title()}
-            return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    info = {"url": cdp.get_page_url(), "title": cdp.get_page_title()}
+                    return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_page_info error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP page_info failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_click_at":
             cdp = _get_cdp()
@@ -656,40 +678,95 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            tabs = cdp.client.list_targets()
-            pages = [{"id": t.get("id"), "title": t.get("title", ""), "url": t.get("url", "")} for t in tabs if t.get("type") == "page"]
-            return {"type": "text", "text": json.dumps(pages, ensure_ascii=False)}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    tabs = cdp.client.list_targets()
+                    pages = [{"id": t.get("id"), "title": t.get("title", ""), "url": t.get("url", "")} for t in tabs if t.get("type") == "page"]
+                    return {"type": "text", "text": json.dumps(pages, ensure_ascii=False)}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_list_tabs error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP list_tabs failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_new_tab":
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
             url = input_data.get("url", "about:blank")
-            result = cdp.client.new_tab(url)
-            return {"type": "text", "text": f"New tab: {json.dumps(result, ensure_ascii=False)[:300]}"}
+            for attempt in range(max_attempts):
+                try:
+                    result = cdp.client.new_tab(url)
+                    return {"type": "text", "text": f"New tab: {json.dumps(result, ensure_ascii=False)[:300]}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_new_tab error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP new_tab failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_activate_tab":
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            ok = cdp.client.activate_tab(input_data["target_id"])
-            return {"type": "text", "text": f"Activated: {ok}"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    ok = cdp.client.activate_tab(input_data["target_id"])
+                    return {"type": "text", "text": f"Activated: {ok}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_activate_tab error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP activate_tab failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_close_tab":
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            ok = cdp.client.close_tab(input_data["target_id"])
-            return {"type": "text", "text": f"Closed: {ok}"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    ok = cdp.client.close_tab(input_data["target_id"])
+                    return {"type": "text", "text": f"Closed: {ok}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_close_tab error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP close_tab failed after {max_attempts} attempts: {e}"}
 
         elif name == "cdp_screenshot":
             cdp = _get_cdp()
             if not cdp:
                 return {"type": "text", "text": "CDP not available"}
-            b64 = cdp.client.take_screenshot()
-            if b64:
-                return {"type": "image", "base64": b64}
-            return {"type": "text", "text": "Screenshot failed"}
+            max_attempts = int(os.getenv('CLAWUI_CDP_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_CDP_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    b64 = cdp.client.take_screenshot()
+                    if b64:
+                        return {"type": "image", "base64": b64}
+                    raise Exception("Empty screenshot")
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] cdp_screenshot error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"CDP screenshot failed after {max_attempts} attempts: {e}"}
 
         # Marionette (Firefox) tools
         elif name == "ff_navigate":
@@ -697,74 +774,162 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available. Start Firefox with --marionette"}
-            mc.navigate(input_data["url"])
-            time.sleep(2)
-            info = {"url": mc.get_url(), "title": mc.get_title()}
-            return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    mc.navigate(input_data["url"])
+                    time.sleep(2)
+                    info = {"url": mc.get_url(), "title": mc.get_title()}
+                    return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_navigate error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox navigate failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_click":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            el = mc.find_element("css selector", input_data["selector"])
-            if not el:
-                return {"type": "text", "text": "Element not found"}
-            ok = mc.click_element(el)
-            return {"type": "text", "text": f"Click: {ok}"}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    el = mc.find_element("css selector", input_data["selector"])
+                    if not el:
+                        return {"type": "text", "text": "Element not found"}
+                    ok = mc.click_element(el)
+                    return {"type": "text", "text": f"Click: {ok}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_click error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox click failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_type":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            el = mc.find_element("css selector", input_data["selector"])
-            if not el:
-                return {"type": "text", "text": "Element not found"}
-            mc.send_keys(el, input_data["text"])
-            return {"type": "text", "text": f"Typed into {input_data['selector']}"}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    el = mc.find_element("css selector", input_data["selector"])
+                    if not el:
+                        return {"type": "text", "text": "Element not found"}
+                    mc.send_keys(el, input_data["text"])
+                    return {"type": "text", "text": f"Typed into {input_data['selector']}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_type error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox type failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_eval":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            result = mc.execute_script(input_data["script"])
-            return {"type": "text", "text": json.dumps(result, ensure_ascii=False)[:500]}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    result = mc.execute_script(input_data["script"])
+                    return {"type": "text", "text": json.dumps(result, ensure_ascii=False)[:500]}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_eval error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox eval failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_page_info":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            info = {"url": mc.get_url(), "title": mc.get_title()}
-            return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    info = {"url": mc.get_url(), "title": mc.get_title()}
+                    return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_page_info error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox page_info failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_screenshot":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            b64 = mc.take_screenshot()
-            if b64:
-                return {"type": "image", "base64": b64}
-            return {"type": "text", "text": "Screenshot failed"}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    b64 = mc.take_screenshot()
+                    if b64:
+                        return {"type": "image", "base64": b64}
+                    raise Exception("Empty screenshot")
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_screenshot error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox screenshot failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_list_tabs":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            handles = mc.get_window_handles()
-            return {"type": "text", "text": json.dumps(handles, ensure_ascii=False)}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    handles = mc.get_window_handles()
+                    return {"type": "text", "text": json.dumps(handles, ensure_ascii=False)}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_list_tabs error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox list_tabs failed after {max_attempts} attempts: {e}"}
 
         elif name == "ff_switch_tab":
             from .marionette_helper import get_or_create_marionette_client
             mc = get_or_create_marionette_client()
             if not mc:
                 return {"type": "text", "text": "Marionette not available"}
-            ok = mc.switch_to_window(input_data["handle"])
-            return {"type": "text", "text": f"Switched: {ok}"}
+            max_attempts = int(os.getenv('CLAWUI_MARIONETTE_RETRY_MAX', '3'))
+            delay = float(os.getenv('CLAWUI_MARIONETTE_RETRY_DELAY', '1.0'))
+            for attempt in range(max_attempts):
+                try:
+                    ok = mc.switch_to_window(input_data["handle"])
+                    return {"type": "text", "text": f"Switched: {ok}"}
+                except Exception as e:
+                    if attempt < max_attempts - 1:
+                        print(f"[WARN] ff_switch_tab error: {e} (attempt {attempt+1}/{max_attempts}), retrying in {delay:.1f}s...")
+                        time.sleep(delay)
+                        delay *= 2
+                        continue
+                    return {"type": "text", "text": f"Firefox switch_tab failed after {max_attempts} attempts: {e}"}
 
         # OCR-based tools
         elif name == "find_text":
