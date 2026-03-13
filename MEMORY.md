@@ -138,15 +138,17 @@
 ## 近期行动摘要 (2026-03-13)
 1. **GUI 环境自动继承**: 增强 `cdp_helper.py`，新增 `inherit_gui_session_env()` 函数，可从用户图形会话进程（gnome-session/Xorg）读取 `DISPLAY`、`WAYLAND_DISPLAY`、`XAUTHORITY`，使自动化脚本能在非交互式环境中正确连接到用户的图形会话。这解决了浏览器自动化无法打开窗口的问题。
 2. **Google 注册点击修复**: 更新 `google_signup_demo.py`，改用 `dispatch_mouse` 坐标点击替代 `element.click()`，更可靠且不易被反机器人系统检测。
-3. **新增 `wait_for_element` 工具** - 实现带指数退避的 AT-SPI 元素等待机制，大幅提升自动化可靠性（之前仅有 `wait_for_window`）。
-4. **创建 `tests/test_core.py` 测试套件** - 21 个测试涵盖工具注册、后端导入、基础操作、perception 路由等；11 个非 GUI 测试全部通过，10 个 GUI 测试在无图形环境优雅跳过。
-5. **修复 agent.py 中 4 个关键 bug**:
+3. **systemd --user 服务测试**: 验证 OpenClaw Gateway 已在 systemd --user 下运行，但该环境仍不自动包含 `DISPLAY`/`XAUTHORITY`。确认 Xauthority 文件为空是导致有头模式失败的根因。
+4. **无头模式强制方案**: 由于 Xauthority 无效，建议使用 Chromium 无头模式（`--headless=new`）进行自动化。代码已支持，但受 OpenClaw exec 环境限制，浏览器进程需在用户图形终端中运行。
+5. **新增 `wait_for_element` 工具** - 实现带指数退避的 AT-SPI 元素等待机制，大幅提升自动化可靠性（之前仅有 `wait_for_window`）。
+6. **创建 `tests/test_core.py` 测试套件** - 21 个测试涵盖工具注册、后端导入、基础操作、perception 路由等；11 个非 GUI 测试全部通过，10 个 GUI 测试在无图形环境优雅跳过。
+7. **修复 agent.py 中 4 个关键 bug**:
    - 变量遮蔽问题（`find_element` 中的 `name` 参数被覆盖）
    - 导入不一致（`from src.` 改为 `from .` 避免包加载失败）
    - `consecutive_errors` 计数逻辑错误（重置位置错误导致从不触发）
    - `result` 变量名冲突（后端响应与工具结果混淆）
-6. **持续集成验证**: 所有自动 cron 任务通过，GitHub Issues 为零，工作区保持干净。
-7. **Google 注册自动化测试**: 演示脚本已更新，但由于 OpenClaw 执行环境无法维持长时间 GUI 进程，建议用户在图形终端中手动运行以验证完整流程。
+8. **持续集成验证**: 所有自动 cron 任务通过，GitHub Issues 为零，工作区保持干净。
+9. **Google 注册自动化测试**: 演示脚本已更新，但由于 exec 环境限制，必须在用户的图形终端中手动运行以验证完整流程。提供了测试脚本供用户直接运行。
 
 ## 待办
 - **测试模板系统**: 手动运行 `learn_template.py wechat_devtools` 记录"新建项目"等按钮坐标, 然后用 `click_template` 实现完整自动化
