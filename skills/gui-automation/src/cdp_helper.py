@@ -8,6 +8,7 @@ import sys
 import time
 import socket
 import http.client
+import tempfile
 from typing import Optional, List, Dict, Any
 
 # Default persistent profile directory for auto-launched Chromium
@@ -372,6 +373,31 @@ class CDPClient:
 _launched_browser_processes = {}
 
 
+def _profile_dirs_for_launch(port: int) -> List[str]:
+    """Candidate Chromium profile directories (best-effort by environment)."""
+    dirs: List[str] = []
+
+    # Stable project profile first
+    dirs.append(DEFAULT_USER_DATA_DIR)
+
+    # Snap Chromium prefers ~/snap/chromium/common
+    snap_common = os.path.join(os.path.expanduser("~"), "snap", "chromium", "common")
+    if os.path.isdir(snap_common):
+        dirs.append(os.path.join(snap_common, f"clawui-profile-{port}"))
+
+    # Last resort: temp dir (avoids singleton lock and permission edge cases)
+    dirs.append(tempfile.mkdtemp(prefix=f"clawui-cdp-{port}-"))
+
+    # Keep order, remove duplicates
+    seen = set()
+    unique_dirs = []
+    for d in dirs:
+        if d not in seen:
+            unique_dirs.append(d)
+            seen.add(d)
+    return unique_dirs
+
+
 def launch_chromium_with_cdp(port: int = 9222, url: str = "about:blank") -> Optional[subprocess.Popen]:
     """Launch Chromium/Chrome with remote debugging enabled.
 
@@ -379,61 +405,65 @@ def launch_chromium_with_cdp(port: int = 9222, url: str = "about:blank") -> Opti
 
     Returns the Popen object if successful, None otherwise.
     """
-    # Ensure the persistent profile directory exists
-    os.makedirs(DEFAULT_USER_DATA_DIR, exist_ok=True)
 
-    # Base arguments common to all launches
-    base_args = [
-        f'--remote-debugging-port={port}',
-        '--remote-allow-origins=*',
-        '--no-first-run',
-        '--no-default-browser-check',
-        f'--user-data-dir={DEFAULT_USER_DATA_DIR}',
-        url
+    # Candidate launchers without profile args (profile injected per-attempt)
+    launcher_candidates = [
+        ['chromium-browser', '--headless=new'],
+        ['chromium', '--headless=new'],
+        ['google-chrome', '--headless=new'],
+        ['google-chrome-stable', '--headless=new'],
+        ['chrome', '--headless=new'],
+        ['snap', 'run', 'chromium', '--headless=new'],
+        ['snap', 'run', 'chromium', '--no-sandbox', '--headless=new'],
+        ['chromium-browser', '--no-sandbox', '--headless=new'],
     ]
 
-    # Headless-only candidates (no X dependency)
-    candidates = [
-        ['chromium-browser', '--headless=new'] + base_args,
-        ['chromium', '--headless=new'] + base_args,
-        ['google-chrome', '--headless=new'] + base_args,
-        ['google-chrome-stable', '--headless=new'] + base_args,
-        ['chrome', '--headless=new'] + base_args,
-        ['snap', 'run', 'chromium', '--headless=new'] + base_args,
-        # Fallback with --no-sandbox for snap confinement
-        ['snap', 'run', 'chromium', '--no-sandbox', '--headless=new'] + base_args,
-        ['chromium-browser', '--no-sandbox', '--headless=new'] + base_args,
-    ]
-
-    for cmd in candidates:
+    for profile_dir in _profile_dirs_for_launch(port):
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True
-            )
-            time.sleep(3)
-            if _is_port_listening(port):
-                _launched_browser_processes[port] = proc
-                return proc
-            time.sleep(2)
-            if _is_port_listening(port):
-                _launched_browser_processes[port] = proc
-                return proc
-            try:
-                proc.terminate()
-                proc.wait(timeout=2)
-            except:
-                pass
-            _, stderr = proc.communicate()
-            if stderr:
-                print(f"[DEBUG] Command '{' '.join(cmd)}' failed: {stderr.decode('utf-8', 'ignore')[:200]}", file=sys.stderr)
-        except FileNotFoundError:
-            continue
+            os.makedirs(profile_dir, exist_ok=True)
         except Exception as e:
-            print(f"[DEBUG] Exception launching '{' '.join(cmd)}': {e}", file=sys.stderr)
+            print(f"[DEBUG] Cannot prepare profile dir {profile_dir}: {e}", file=sys.stderr)
             continue
+
+        base_args = [
+            f'--remote-debugging-port={port}',
+            '--remote-allow-origins=*',
+            '--no-first-run',
+            '--no-default-browser-check',
+            f'--user-data-dir={profile_dir}',
+            url,
+        ]
+
+        for launcher in launcher_candidates:
+            cmd = launcher + base_args
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True
+                )
+                time.sleep(3)
+                if _is_port_listening(port):
+                    _launched_browser_processes[port] = proc
+                    return proc
+                time.sleep(2)
+                if _is_port_listening(port):
+                    _launched_browser_processes[port] = proc
+                    return proc
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
+                _, stderr = proc.communicate()
+                if stderr:
+                    print(f"[DEBUG] Command '{' '.join(cmd)}' failed: {stderr.decode('utf-8', 'ignore')[:240]}", file=sys.stderr)
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                print(f"[DEBUG] Exception launching '{' '.join(cmd)}': {e}", file=sys.stderr)
+                continue
 
     return None
 
