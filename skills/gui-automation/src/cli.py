@@ -23,7 +23,7 @@ import os
 import subprocess
 import sys
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 def _import_error(module_name: str, exc: Exception) -> int:
@@ -35,6 +35,129 @@ def _import_error(module_name: str, exc: Exception) -> int:
 def _runtime_error(action: str, exc: Exception) -> int:
     print(f"Error while running '{action}': {exc}", file=sys.stderr)
     return 1
+
+
+def _run_doctor() -> int:
+    """Run environment diagnostics and report status of all backends."""
+    import shutil
+
+    print(f"ClawUI Doctor v{VERSION}")
+    print("=" * 50)
+    issues = []
+
+    # 1. Display server
+    print("\n🖥️  Display Server")
+    session_type = os.environ.get("XDG_SESSION_TYPE", "unknown")
+    display = os.environ.get("DISPLAY", "")
+    wayland = os.environ.get("WAYLAND_DISPLAY", "")
+    print(f"  Session type: {session_type}")
+    print(f"  DISPLAY: {display or '(not set)'}")
+    print(f"  WAYLAND_DISPLAY: {wayland or '(not set)'}")
+    if not display and not wayland:
+        issues.append("No display server detected (DISPLAY and WAYLAND_DISPLAY both unset)")
+
+    # 2. AT-SPI (accessibility)
+    print("\n♿ AT-SPI (Accessibility)")
+    try:
+        import gi
+        gi.require_version("Atspi", "2.0")
+        from gi.repository import Atspi
+        desktop = Atspi.get_desktop(0)
+        n_apps = desktop.get_child_count()
+        print(f"  ✅ AT-SPI available ({n_apps} apps detected)")
+    except Exception as e:
+        print(f"  ❌ AT-SPI unavailable: {e}")
+        issues.append("AT-SPI not available — install python3-gi and at-spi2-core")
+
+    # 3. X11 tools
+    print("\n🪟 X11 Tools")
+    for tool in ["xdotool", "xwininfo", "xprop"]:
+        path = shutil.which(tool)
+        if path:
+            print(f"  ✅ {tool}: {path}")
+        else:
+            print(f"  ❌ {tool}: not found")
+            issues.append(f"{tool} not found — install xdotool / x11-utils")
+
+    # 4. Screenshot tools
+    print("\n📸 Screenshot")
+    for tool in ["grim", "gnome-screenshot", "scrot", "import"]:
+        path = shutil.which(tool)
+        if path:
+            print(f"  ✅ {tool}: {path}")
+            break
+    else:
+        print("  ❌ No screenshot tool found")
+        issues.append("No screenshot tool found — install grim (Wayland) or scrot (X11)")
+
+    # 5. OCR
+    print("\n🔍 OCR (Tesseract)")
+    tess = shutil.which("tesseract")
+    if tess:
+        try:
+            langs = subprocess.check_output(["tesseract", "--list-langs"], stderr=subprocess.STDOUT).decode()
+            lang_list = [l.strip() for l in langs.strip().split("\n")[1:] if l.strip()]
+            print(f"  ✅ tesseract: {tess} ({len(lang_list)} languages: {', '.join(lang_list[:5])}{'...' if len(lang_list) > 5 else ''})")
+        except Exception:
+            print(f"  ✅ tesseract: {tess}")
+    else:
+        print("  ⚠️  tesseract not found — OCR features will be limited")
+        issues.append("tesseract not found — install tesseract-ocr for OCR features")
+
+    # 6. CDP (Chromium DevTools Protocol)
+    print("\n🌐 CDP (Browser Automation)")
+    try:
+        from .cdp_helper import get_or_create_cdp_client
+        client = get_or_create_cdp_client()
+        if client and client.is_available():
+            title = client.get_page_title() or "(no title)"
+            print(f"  ✅ CDP connected — current page: {title}")
+        else:
+            print("  ⚠️  CDP not connected (start Chromium with --remote-debugging-port=9222)")
+    except Exception as e:
+        print(f"  ⚠️  CDP unavailable: {e}")
+
+    # 7. Firefox Marionette
+    print("\n🦊 Firefox Marionette")
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        result = s.connect_ex(("127.0.0.1", 2828))
+        s.close()
+        if result == 0:
+            print("  ✅ Marionette port 2828 is open")
+        else:
+            print("  ⚠️  Marionette not connected (start Firefox with --marionette)")
+    except Exception:
+        print("  ⚠️  Could not check Marionette port")
+
+    # 8. Python dependencies
+    print("\n🐍 Python Dependencies")
+    deps = {
+        "PIL": "Pillow (image processing)",
+        "numpy": "NumPy (annotated screenshots)",
+        "pytesseract": "pytesseract (OCR wrapper)",
+        "websocket": "websocket-client (CDP)",
+    }
+    for mod, desc in deps.items():
+        try:
+            __import__(mod)
+            print(f"  ✅ {desc}")
+        except ImportError:
+            print(f"  ❌ {desc} — not installed")
+            issues.append(f"Missing Python package: {desc}")
+
+    # Summary
+    print("\n" + "=" * 50)
+    if issues:
+        print(f"⚠️  {len(issues)} issue(s) found:")
+        for i, issue in enumerate(issues, 1):
+            print(f"  {i}. {issue}")
+        return 1
+    else:
+        print("✅ All checks passed — ClawUI is ready!")
+        return 0
 
 
 def _parse_coords(coords: str) -> tuple[int, int]:
@@ -112,6 +235,9 @@ def main():
     # Test
     test_p = subparsers.add_parser("test", help="Run unit tests (pytest tests/)")
     test_p.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
+    # Doctor (diagnostics)
+    subparsers.add_parser("doctor", help="Check environment and diagnose issues")
 
     # Version
     subparsers.add_parser("version", help="Show version")
@@ -322,6 +448,9 @@ def main():
         if args.verbose:
             cmd.append("-v")
         return subprocess.call(cmd)
+
+    elif args.command == "doctor":
+        return _run_doctor()
 
     elif args.command == "version":
         print(f"clawui {VERSION}")
