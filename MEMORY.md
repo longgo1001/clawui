@@ -207,3 +207,7 @@
 - **启动脚本**: `~/launch_wechat_devtools.sh`
 - **飞书发图**: 图片放 workspace 目录，用 `openclaw message send --media <path>` 发送
 - **ClawUI 控制 Wine 应用**: AT-SPI 不可用，必须 xdotool + 截图 + 颜色匹配定位
+
+## 新增经验 (2026-03-14 午间)
+- **微信基础库下载故障可绕过**: `res.servicewechat.com` 在部分时段会出现 ECONNRESET/SSL reset，但重试并强制 IPv4 (`curl -4`) 可成功下载大文件（`1501.wxapkg`，约 34MB）；此前 0-byte 的 `3.14.2.wxvpkg` 是中断下载造成。
+- **NVIDIA Integrate 可用性**: `https://integrate.api.nvidia.com/v1` + `z-ai/glm4.7` API 连通；该模型返回内容主要在 `reasoning_content`，集成到 OpenAI 兼容客户端时需确认对该字段的兼容处理。
