@@ -216,3 +216,8 @@
 - 安装目录确认存在 `cli.bat` / `cli.js`，并支持 `open --project`，可绕过“导入页点击创建无效”问题，直接打开指定项目。
 - 在 Wine 环境下首次 CLI 调用常见阻塞点是 **IDE Service Port 关闭**（需交互确认 `y`）；另有端口冲突/等待端口超时问题，避免强制指定异常端口更稳。
 - 用户数据目录可通过 `WeappLocalData` 里的 `hash_key_map_2.json` + `localstorage_*`（`projectList`/`STATIC_CONFIG`/`last_compiled`）注入最近项目索引，作为 CLI 失败时的二级兜底。
+
+## 新增流程经验 (2026-03-14 夜间)
+- **创建无响应先读提示**：微信开发者工具里“点击创建没反应”常见根因是表单校验（如 `无 AppID`），需先截图+OCR提取提示，再做分支处理。
+- **网络错误分类**：若提示 `下载基础库失败 / ECONNRESET`，优先判定为资源下载链路问题（非按钮问题），先重试再做连通性检测。
+- **流程固化**：在 ClawUI 增加了 `screen_inspect`、`resolve_create_blockers`、`smart_step`，将 Observe→Decide→Act→Verify 闭环工具化。

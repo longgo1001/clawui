@@ -405,6 +405,41 @@ class CDPClient:
                 "key": ch
             })
 
+    def hover(self, x: int, y: int):
+        """Move mouse to viewport coordinates without clicking (hover/mouseover)."""
+        self._raw_cdp("Input.dispatchMouseEvent", {
+            "type": "mouseMoved", "x": x, "y": y
+        })
+
+    def scroll_page(self, x: int = 0, y: int = 0, delta_x: int = 0, delta_y: int = 0):
+        """Scroll the page at (x, y) by (delta_x, delta_y) pixels.
+        
+        delta_y negative = scroll up, positive = scroll down.
+        delta_x negative = scroll left, positive = scroll right.
+        """
+        self._raw_cdp("Input.dispatchMouseEvent", {
+            "type": "mouseWheel", "x": x, "y": y,
+            "deltaX": delta_x, "deltaY": delta_y
+        })
+
+    def hover_selector(self, selector: str) -> Dict:
+        """Hover over an element by CSS selector. Returns element bbox."""
+        js = f"""(function(){{
+            var el = document.querySelector({json.dumps(selector)});
+            if(!el) return {{error: "not found"}};
+            var r = el.getBoundingClientRect();
+            el.dispatchEvent(new MouseEvent('mouseenter', {{bubbles:true}}));
+            el.dispatchEvent(new MouseEvent('mouseover', {{bubbles:true}}));
+            return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2), width: Math.round(r.width), height: Math.round(r.height)}};
+        }})()"""
+        result = self.evaluate(js)
+        if isinstance(result, dict) and isinstance(result.get("result"), dict):
+            result = result["result"].get("value", result)
+        if isinstance(result, dict) and not result.get("error"):
+            # Also dispatch real mouse move for CSS :hover
+            self.hover(result["x"], result["y"])
+        return result
+
     def type_text(self, selector: str = None, text: str = ""):
         """Type text using real keyboard events. If selector provided, click+focus first."""
         if selector:

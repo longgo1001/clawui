@@ -145,6 +145,8 @@ Browser tools (CDP - requires Chromium with --remote-debugging-port=9222):
 - cdp_get_elements: Extract all interactive elements (buttons, links, inputs) from the page with text, selector, and bounding box — the web equivalent of ui_tree
 - cdp_wait_for_selector: Wait until a CSS selector matches an element (avoids race conditions)
 - cdp_wait_for_navigation: Wait until URL/title changes after navigation
+- cdp_scroll: Scroll the browser page (delta_y positive=down, negative=up)
+- cdp_hover: Hover over element by CSS selector (triggers :hover CSS states and mouse events)
 
 Browser tools (Marionette - requires Firefox with --marionette):
 - ff_navigate: Navigate Firefox to URL
@@ -210,6 +212,8 @@ def create_tools():
         {"name": "cdp_screenshot", "description": "Take a screenshot of the browser page", "input_schema": {"type": "object", "properties": {}}},
         {"name": "cdp_wait_for_selector", "description": "Wait until a CSS selector matches an element in the browser page. Returns match info or timeout error.", "input_schema": {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector to wait for"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}, "required": ["selector"]}},
         {"name": "cdp_wait_for_navigation", "description": "Wait until browser URL contains a string or title contains a string. Useful after clicking links/submitting forms.", "input_schema": {"type": "object", "properties": {"url_contains": {"type": "string", "description": "Wait until URL contains this string"}, "title_contains": {"type": "string", "description": "Wait until title contains this string"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}}},
+        {"name": "cdp_scroll", "description": "Scroll the browser page. Use delta_y positive for down, negative for up. Optionally specify (x,y) to scroll at a specific position.", "input_schema": {"type": "object", "properties": {"delta_y": {"type": "integer", "default": 300, "description": "Vertical scroll amount in pixels (positive=down, negative=up)"}, "delta_x": {"type": "integer", "default": 0, "description": "Horizontal scroll amount (positive=right, negative=left)"}, "x": {"type": "integer", "default": 400, "description": "X position to scroll at"}, "y": {"type": "integer", "default": 400, "description": "Y position to scroll at"}}}},
+        {"name": "cdp_hover", "description": "Hover over an element by CSS selector in the browser (triggers :hover CSS and mouseenter/mouseover events). Returns element position.", "input_schema": {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector of element to hover"}}, "required": ["selector"]}},
         # Marionette tools (Firefox automation)
         {"name": "ff_navigate", "description": "Navigate Firefox to URL (requires firefox --marionette)", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
         {"name": "ff_click", "description": "Click element by CSS selector in Firefox", "input_schema": {"type": "object", "properties": {"selector": {"type": "string"}}, "required": ["selector"]}},
@@ -231,7 +235,7 @@ def create_tools():
         {"name": "click_text", "description": "Find text on screen via OCR and click its center. Combines find_text + click in one step. Retries up to 3 times with increasing delay if text not found.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to find and click (case-insensitive partial match)"}, "button": {"type": "string", "enum": ["left", "right", "double"], "default": "left"}, "index": {"type": "integer", "default": 0, "description": "Which occurrence to click if multiple matches (0=first, -1=last)"}, "timeout": {"type": "number", "default": 5, "description": "Max seconds to retry finding the text"}}, "required": ["text"]}},
         {"name": "screen_inspect", "description": "Inspect screenshot content via OCR and return detected hints/errors with recommended next actions. Use this before critical clicks if UI seems unresponsive.", "input_schema": {"type": "object", "properties": {"keywords": {"type": "array", "items": {"type": "string"}, "description": "Optional keywords to detect, e.g. ['无 AppID','错误','失败']"}}}},
         {"name": "resolve_create_blockers", "description": "Auto-handle common create-page blockers using OCR hints. Handles: missing AppID -> click 测试号, ECONNRESET -> click 重试, then try click 创建.", "input_schema": {"type": "object", "properties": {}}},
-        {"name": "smart_step", "description": "Run one intelligent UI step: inspect screenshot, classify blockers, execute best action, then verify state change.", "input_schema": {"type": "object", "properties": {"goal": {"type": "string", "description": "Goal hint, e.g. 'create project' or 'dismiss error popup'"}, "dry_run": {"type": "boolean", "default": false}}}},
+        {"name": "smart_step", "description": "Run one intelligent UI step: inspect screenshot, classify blockers, execute best action, then verify state change.", "input_schema": {"type": "object", "properties": {"goal": {"type": "string", "description": "Goal hint, e.g. 'create project' or 'dismiss error popup'"}, "dry_run": {"type": "boolean", "default": False}}}},
         # Template-based clicking (fallback when AT-SPI/vision not available)
         {"name": "click_template", "description": "Click on a UI element based on a learned template. Input: app (template name), element (key in template), optional: offset_x/y (pixel offset)", "input_schema": {"type": "object", "properties": {"app": {"type": "string"}, "element": {"type": "string"}}, "optional": ["offset_x", "offset_y"]}},
         # High-level task automation (B)
@@ -804,6 +808,19 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 )
                 return {"type": "text", "text": json.dumps(result)}
 
+            def _cdp_scroll_impl():
+                x = input_data.get("x", 400)
+                y = input_data.get("y", 400)
+                delta_x = input_data.get("delta_x", 0)
+                delta_y = input_data.get("delta_y", 300)
+                cdp.client.scroll_page(x=x, y=y, delta_x=delta_x, delta_y=delta_y)
+                return {"type": "text", "text": json.dumps({"scrolled": True, "delta_x": delta_x, "delta_y": delta_y})}
+
+            def _cdp_hover_impl():
+                selector = input_data.get("selector", "")
+                result = cdp.client.hover_selector(selector)
+                return {"type": "text", "text": json.dumps(result)}
+
             cdp_retry_handlers = {
                 "cdp_navigate": ("CDP navigate", _cdp_navigate_impl),
                 "cdp_click": ("CDP click", _cdp_click_impl),
@@ -816,6 +833,8 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 "cdp_activate_tab": ("CDP activate_tab", _cdp_activate_tab_impl),
                 "cdp_close_tab": ("CDP close_tab", _cdp_close_tab_impl),
                 "cdp_screenshot": ("CDP screenshot", _cdp_screenshot_impl),
+                "cdp_scroll": ("CDP scroll", _cdp_scroll_impl),
+                "cdp_hover": ("CDP hover", _cdp_hover_impl),
             }
             cdp_non_retry_handlers = {
                 "cdp_get_elements": _cdp_get_elements_impl,

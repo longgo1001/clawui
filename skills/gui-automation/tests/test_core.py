@@ -72,6 +72,24 @@ def test_cdp_import():
     from src.cdp_helper import CDPClient
 
 
+def test_cdp_scroll_and_hover_methods_exist():
+    """CDPClient should have scroll_page, hover, and hover_selector methods."""
+    from src.cdp_helper import CDPClient
+    c = CDPClient()
+    assert hasattr(c, 'scroll_page'), "Missing scroll_page method"
+    assert hasattr(c, 'hover'), "Missing hover method"
+    assert hasattr(c, 'hover_selector'), "Missing hover_selector method"
+
+
+def test_cdp_scroll_hover_tools_registered():
+    """cdp_scroll and cdp_hover should be in the tool list."""
+    from src.agent import create_tools
+    tools = create_tools()
+    names = [t["name"] for t in tools]
+    assert "cdp_scroll" in names, "cdp_scroll tool not registered"
+    assert "cdp_hover" in names, "cdp_hover tool not registered"
+
+
 def test_cdp_wait_for_selector_result_parsing():
     """wait_for_selector should correctly parse Runtime.evaluate nested result.value payload."""
     from src.cdp_helper import CDPClient

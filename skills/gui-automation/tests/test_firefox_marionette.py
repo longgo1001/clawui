@@ -67,7 +67,7 @@ def test_basic(client):
     log(f"   Loaded: {title} @ {url}")
     assert "example" in title.lower() or "example" in url.lower(), "Wrong page"
     log("   ✅ PASSED")
-    return True
+
 
 
 @with_fresh_client
@@ -105,7 +105,7 @@ def test_form_interaction(client):
     log(f"   After login: {title}")
     assert "secure" in title.lower() or "secure" in url.lower(), f"Login failed: {title}"
     log("   ✅ PASSED")
-    return True
+
 
 
 @with_fresh_client
@@ -128,7 +128,7 @@ def test_screenshot(client):
     log(f"   Saved: {path} ({len(b64)} bytes)")
 
     log("   ✅ PASSED")
-    return True
+
 
 
 @with_fresh_client
@@ -143,7 +143,7 @@ def test_js_execution(client):
     log(f"   Page: {info.get('t')}")
 
     log("   ✅ PASSED")
-    return True
+
 
 
 def main():
@@ -155,8 +155,8 @@ def main():
     passed = 0
     for test in tests:
         try:
-            if test():
-                passed += 1
+            test()
+            passed += 1
         except Exception as e:
             log(f"   ❌ FAILED: {e}")
 
