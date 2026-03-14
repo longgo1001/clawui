@@ -195,3 +195,15 @@
 - 已将 Wine 从 `9.0` 升级到 `wine-staging 11.4`，升级动作生效。
 - 兼容现状：在 `--no-sandbox --disable-gpu --disable-gpu-compositing --use-gl=swiftshader` 参数下，工具仍会启动后静默退出（无窗口）。
 - 结论：该问题不是“系统 Chromium 版本低”导致；核心在内嵌 NW.js/Chromium 与 Wine 的兼容性，单纯升级 Wine 不足以完全解决。
+
+## 微信开发者工具 Wine 自动化 (2026-03-14)
+- **安装**: Wine-staging 11.4 (WineHQ), 微信开发者工具 v2.01.2510280 (NW.js 0.54.1/Chromium 91)
+- **关键修复**:
+  1. Wine X11 驱动强制（Wine 11.4 默认 Wayland）
+  2. 传入 `code/package.nw` 应用路径（否则只显示 NW.js 默认页）
+  3. `winecfg /v win10`（1.06+ 不支持 Win7，模拟器和按钮会异常）
+  4. 清理 nwjs GPU/Shader/Code Cache（黑屏残留）
+  5. `--use-gl=swiftshader`（Wine 下 GPU 不可用）
+- **启动脚本**: `~/launch_wechat_devtools.sh`
+- **飞书发图**: 图片放 workspace 目录，用 `openclaw message send --media <path>` 发送
+- **ClawUI 控制 Wine 应用**: AT-SPI 不可用，必须 xdotool + 截图 + 颜色匹配定位
