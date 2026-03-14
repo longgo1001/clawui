@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Firefox Marionette reliability test - validates core browser automation."""
 
-import sys
-import os
 import time
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 log = logging.info
 
-# Setup paths
-sys.path.insert(0, '/home/hung/.openclaw/workspace/ClawUI/skills/gui-automation')
 from src.marionette_helper import get_or_create_marionette_client
 
 
@@ -23,7 +20,7 @@ def wait_for_page_load(client, timeout=10):
             url = client.get_url() or ""
             if title and url and "about:blank" not in url.lower():
                 return title, url
-        except:
+        except Exception:
             pass
         time.sleep(0.5)
     return client.get_title() or "", client.get_url() or ""
@@ -31,6 +28,7 @@ def wait_for_page_load(client, timeout=10):
 
 def with_fresh_client(test_func):
     """Decorator: create fresh client/session for each test."""
+
     def wrapper():
         client = None
         try:
@@ -39,7 +37,7 @@ def with_fresh_client(test_func):
                 old = get_or_create_marionette_client()
                 if old:
                     old.quit()
-            except:
+            except Exception:
                 pass
             time.sleep(1)
 
@@ -48,13 +46,14 @@ def with_fresh_client(test_func):
             session = client.new_session()
             assert session, "Failed to create session"
             log(f"   [Session: {session[:8]}]")
-            return test_func(client)
+            test_func(client)
         finally:
             if client:
                 try:
                     client.close_window()
-                except:
+                except Exception:
                     pass
+
     return wrapper
 
 
@@ -67,7 +66,6 @@ def test_basic(client):
     log(f"   Loaded: {title} @ {url}")
     assert "example" in title.lower() or "example" in url.lower(), "Wrong page"
     log("   ✅ PASSED")
-    return True
 
 
 @with_fresh_client
@@ -105,7 +103,6 @@ def test_form_interaction(client):
     log(f"   After login: {title}")
     assert "secure" in title.lower() or "secure" in url.lower(), f"Login failed: {title}"
     log("   ✅ PASSED")
-    return True
 
 
 @with_fresh_client
@@ -128,7 +125,6 @@ def test_screenshot(client):
     log(f"   Saved: {path} ({len(b64)} bytes)")
 
     log("   ✅ PASSED")
-    return True
 
 
 @with_fresh_client
@@ -143,7 +139,6 @@ def test_js_execution(client):
     log(f"   Page: {info.get('t')}")
 
     log("   ✅ PASSED")
-    return True
 
 
 def main():
@@ -155,8 +150,8 @@ def main():
     passed = 0
     for test in tests:
         try:
-            if test():
-                passed += 1
+            test()
+            passed += 1
         except Exception as e:
             log(f"   ❌ FAILED: {e}")
 
@@ -174,4 +169,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

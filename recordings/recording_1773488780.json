@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "created": "2026-03-14T19:46:20.883220",
+    "duration": 0.0002040863037109375,
+    "count": 1
+  },
+  "actions": [
+    {
+      "timestamp": 5.0067901611328125e-06,
+      "tool": "click",
+      "input": {
+        "x": 10,
+        "y": 20
+      },
+      "result": {
+        "type": "text",
+        "text": "ok"
+      }
+    }
+  ]
+}

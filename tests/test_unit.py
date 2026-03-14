@@ -332,3 +332,22 @@ class TestHybridTools(unittest.TestCase):
         names = [t["name"] for t in create_tools()]
         for tool in ("run_command", "file_read", "file_write", "file_list", "open_url"):
             assert tool in names, f"{tool} missing from tools"
+
+
+class TestCLI(unittest.TestCase):
+    """Tests for CLI module."""
+
+    def test_cli_version(self):
+        from src.cli import VERSION
+        assert VERSION == "0.4.0"
+
+    def test_run_inspect_function_exists(self):
+        from src.cli import _run_inspect
+        assert callable(_run_inspect)
+
+    def test_inspect_with_mock_args(self):
+        """Test inspect function signature accepts expected args."""
+        from src.cli import _run_inspect
+        import inspect
+        sig = inspect.signature(_run_inspect)
+        assert len(sig.parameters) == 1  # takes one 'args' param

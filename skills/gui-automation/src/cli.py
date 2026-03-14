@@ -10,6 +10,8 @@ Usage examples:
     clawui find "OK"
     clawui click --text "OK"
     clawui click --coords 100,200
+    clawui inspect
+    clawui inspect --app Firefox --ocr --save screen.png
     clawui record demo
     clawui replay recordings/demo.json
     clawui browser https://example.com
@@ -23,7 +25,7 @@ import os
 import subprocess
 import sys
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 
 def _import_error(module_name: str, exc: Exception) -> int:
@@ -35,6 +37,131 @@ def _import_error(module_name: str, exc: Exception) -> int:
 def _runtime_error(action: str, exc: Exception) -> int:
     print(f"Error while running '{action}': {exc}", file=sys.stderr)
     return 1
+
+
+def _run_inspect(args) -> int:
+    """Analyze current screen: screenshot + interactive elements + optional OCR."""
+    import json as json_mod
+    import time
+    results = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "elements": [], "ocr_lines": [], "apps": []}
+
+    # 1. List applications
+    try:
+        from .perception import list_applications
+        apps = list_applications()
+        if isinstance(apps, list):
+            results["apps"] = apps
+        elif isinstance(apps, str):
+            results["apps"] = [line.strip() for line in apps.strip().split("\n") if line.strip()]
+    except Exception as e:
+        results["apps_error"] = str(e)
+
+    # 2. Get interactive elements
+    try:
+        from .atspi_helper import find_elements
+        roles = ["push button", "toggle button", "menu item", "text", "check box",
+                 "radio button", "combo box", "link", "entry", "spin button"]
+        elements = []
+        app_filter = args.app if hasattr(args, 'app') and args.app else None
+        for role in roles:
+            try:
+                found = find_elements(role=role, app_name=app_filter)
+                if isinstance(found, list):
+                    for el in found[:20]:
+                        if hasattr(el, 'name') and el.name:
+                            elements.append({
+                                "role": role, "name": el.name,
+                                "x": getattr(el, 'x', None), "y": getattr(el, 'y', None),
+                            })
+                        elif isinstance(el, dict):
+                            elements.append(el)
+            except Exception:
+                pass
+        results["elements"] = elements[:200]
+    except ImportError:
+        results["elements_error"] = "AT-SPI not available"
+
+    # 3. Screenshot
+    try:
+        from .screenshot import take_screenshot
+        img_b64 = take_screenshot()
+        if img_b64:
+            if hasattr(args, 'save') and args.save:
+                import base64 as b64mod
+                with open(args.save, 'wb') as f:
+                    f.write(b64mod.b64decode(img_b64))
+                results["screenshot"] = f"saved:{args.save}"
+            else:
+                results["screenshot"] = f"captured ({len(img_b64)} chars base64)"
+    except Exception as e:
+        results["screenshot_error"] = str(e)
+
+    # 4. Optional OCR
+    if hasattr(args, 'ocr') and args.ocr:
+        try:
+            from .ocr_tool import ocr_extract_lines
+            lines = ocr_extract_lines()
+            if isinstance(lines, list):
+                results["ocr_lines"] = [l if isinstance(l, str) else str(l) for l in lines[:100]]
+            elif isinstance(lines, str):
+                results["ocr_lines"] = lines.strip().split("\n")[:100]
+        except Exception as e:
+            results["ocr_error"] = str(e)
+
+    # 5. CDP browser state
+    try:
+        from .cdp_helper import get_or_create_cdp_client
+        client = get_or_create_cdp_client()
+        if client:
+            tabs = client.list_tabs() if hasattr(client, 'list_tabs') else []
+            results["browser"] = {"connected": True, "tabs": len(tabs) if isinstance(tabs, list) else 0}
+    except Exception:
+        results["browser"] = {"connected": False}
+
+    # Output
+    if hasattr(args, 'json_output') and args.json_output:
+        print(json_mod.dumps(results, indent=2, ensure_ascii=False))
+    else:
+        print(f"🔍 ClawUI Screen Inspection — {results['timestamp']}")
+        print("=" * 55)
+        apps = results.get("apps", [])
+        if apps:
+            print(f"\n📱 Running Applications ({len(apps)}):")
+            for app in apps[:15]:
+                print(f"   • {app}")
+            if len(apps) > 15:
+                print(f"   ... and {len(apps) - 15} more")
+        elements = results.get("elements", [])
+        if elements:
+            print(f"\n🎯 Interactive Elements ({len(elements)}):")
+            for i, el in enumerate(elements[:30]):
+                name = el.get("name", "?")
+                role = el.get("role", "?")
+                coords = ""
+                if el.get("x") is not None and el.get("y") is not None:
+                    coords = f" @ ({el['x']}, {el['y']})"
+                print(f"   [{i+1:2d}] {role}: {name}{coords}")
+            if len(elements) > 30:
+                print(f"   ... and {len(elements) - 30} more")
+        if results.get("screenshot"):
+            print(f"\n📸 Screenshot: {results['screenshot']}")
+        elif results.get("screenshot_error"):
+            print(f"\n📸 Screenshot: ❌ {results['screenshot_error']}")
+        ocr_lines = results.get("ocr_lines", [])
+        if ocr_lines:
+            print(f"\n📝 OCR Text ({len(ocr_lines)} lines):")
+            for line in ocr_lines[:20]:
+                print(f"   {line}")
+            if len(ocr_lines) > 20:
+                print(f"   ... and {len(ocr_lines) - 20} more lines")
+        browser = results.get("browser", {})
+        if browser.get("connected"):
+            print(f"\n🌐 Browser: Connected ({browser.get('tabs', 0)} tabs)")
+        else:
+            print("\n🌐 Browser: Not connected")
+        print(f"\nTotal: {len(apps)} apps, {len(elements)} elements" +
+              (f", {len(ocr_lines)} OCR lines" if ocr_lines else ""))
+    return 0
 
 
 def _run_doctor() -> int:
@@ -235,6 +362,13 @@ def main():
     # Test
     test_p = subparsers.add_parser("test", help="Run unit tests (pytest tests/)")
     test_p.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
+    # Inspect (combined screen analysis)
+    inspect_p = subparsers.add_parser("inspect", help="Analyze current screen: screenshot + OCR + elements")
+    inspect_p.add_argument("--app", help="Focus on specific application")
+    inspect_p.add_argument("--save", help="Save annotated screenshot to file")
+    inspect_p.add_argument("--ocr", action="store_true", help="Include OCR text extraction")
+    inspect_p.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
 
     # Doctor (diagnostics)
     subparsers.add_parser("doctor", help="Check environment and diagnose issues")
@@ -448,6 +582,9 @@ def main():
         if args.verbose:
             cmd.append("-v")
         return subprocess.call(cmd)
+
+    elif args.command == "inspect":
+        return _run_inspect(args)
 
     elif args.command == "doctor":
         return _run_doctor()
