@@ -1,52 +1,63 @@
-
-*~
-build/
-.clawhub/
-*.code-workspace
-.coverage
-credentials/
-dist/
-.DS_Store
-*.egg-info/
-.eggs/
-.env
-env/
-# Generated artifacts
-.idea/
-*.key
-lerna-debug.log
-*.log
-# Node
-node_modules/
-npm-debug.log
-.openclaw/
-# OpenClaw workspace ignores
-# OS / editor junk
-*.pem
-.pnpm-debug.log
-projects/*/gui-automation  # symlink to skills version, don't commit
-# Project-specific
+# Python
 *.pyc
 __pycache__/
-*.pyd
 *.pyo
-# Python
+*.pyd
 .Python
-screenshots/
-screenshots/*.png
-# Test/debug artifacts
-*.png
-recordings/*.json
-test_cdp_screenshot.png
-.secrets/
-# Secrets
-# Sensitive configuration (local only)
-*.swo
-*.swp
-Thumbs.db
+*.egg-info/
+.eggs/
+dist/
+build/
 .tox/
-.vault/
 .venv/
 venv/
+env/
+.coverage
+
+# OS / editor junk
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.idea/
 .vscode/
+*.code-workspace
+
+# Secrets & credentials
+.env
+*.key
+*.pem
+credentials/
+.secrets/
+.vault/
+
+# OpenClaw workspace files (personal, not project files)
+AGENTS.md
+BOOTSTRAP.md
+HEARTBEAT.md
+IDENTITY.md
+MEMORY.md
+SOUL.md
+TOOLS.md
+USER.md
+memory/
+ClawUI
+
+# Screenshots & test artifacts
+*.png
+screenshots/
+recordings/*.json
+
+# Generated artifacts
+*.log
+lerna-debug.log
+npm-debug.log
+.pnpm-debug.log
 yarn-error.log
+node_modules/
+
+# Misc
+.openclaw/
+.clawhub/
+projects/
