@@ -472,6 +472,56 @@ class CDPClient:
                         "error": f"Timeout after {timeout}s"}
             time.sleep(poll_interval)
 
+    def get_interactive_elements(self, max_elements: int = 100) -> List[Dict]:
+        """Extract all interactive elements from the page with text, selector, and bounding box.
+        
+        Returns a list of dicts: {tag, type, text, selector, role, bbox: {x,y,width,height}, value}
+        This is the web equivalent of AT-SPI's ui_tree for desktop apps.
+        """
+        js = """
+        (function() {
+            const sel = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="checkbox"], [role="radio"], [onclick], [tabindex]';
+            const els = document.querySelectorAll(sel);
+            const results = [];
+            for (let i = 0; i < Math.min(els.length, %d); i++) {
+                const el = els[i];
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) continue;
+                if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+                const text = (el.innerText || el.textContent || '').trim().slice(0, 100);
+                const ariaLabel = el.getAttribute('aria-label') || '';
+                const placeholder = el.getAttribute('placeholder') || '';
+                const label = text || ariaLabel || placeholder || el.getAttribute('title') || '';
+                // Build a unique selector
+                let css = el.tagName.toLowerCase();
+                if (el.id) css += '#' + CSS.escape(el.id);
+                else if (el.name) css += '[name="' + el.name.replace(/"/g, '\\\\"') + '"]';
+                else if (el.className && typeof el.className === 'string') {
+                    const cls = el.className.trim().split(/\\s+/).slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
+                    css += cls;
+                }
+                results.push({
+                    tag: el.tagName.toLowerCase(),
+                    type: el.type || null,
+                    text: label.slice(0, 80),
+                    selector: css,
+                    role: el.getAttribute('role') || null,
+                    bbox: {x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height)},
+                    value: (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') ? (el.value || '').slice(0, 50) : null
+                });
+            }
+            return results;
+        })()
+        """ % max_elements
+        result = self.evaluate(js)
+        if isinstance(result, dict) and 'result' in result:
+            val = result['result'].get('value', result.get('result'))
+            if isinstance(val, list):
+                return val
+        if isinstance(result, list):
+            return result
+        return []
+
     def take_screenshot(self) -> Optional[str]:
         """Take a screenshot of the browser page, returns base64 PNG."""
         result = self._raw_cdp("Page.captureScreenshot", {"format": "png"})

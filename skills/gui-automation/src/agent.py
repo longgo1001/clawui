@@ -104,6 +104,7 @@ Browser tools (CDP - requires Chromium with --remote-debugging-port=9222):
 - cdp_activate_tab: Switch to a tab by target ID
 - cdp_close_tab: Close a tab by target ID
 - cdp_screenshot: Take a screenshot of the browser page
+- cdp_get_elements: Extract all interactive elements (buttons, links, inputs) from the page with text, selector, and bounding box — the web equivalent of ui_tree
 - cdp_wait_for_selector: Wait until a CSS selector matches an element (avoids race conditions)
 - cdp_wait_for_navigation: Wait until URL/title changes after navigation
 
@@ -167,6 +168,7 @@ def create_tools():
         {"name": "cdp_new_tab", "description": "Open a new browser tab", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}}},
         {"name": "cdp_activate_tab", "description": "Switch to a browser tab by target ID", "input_schema": {"type": "object", "properties": {"target_id": {"type": "string"}}, "required": ["target_id"]}},
         {"name": "cdp_close_tab", "description": "Close a browser tab by target ID", "input_schema": {"type": "object", "properties": {"target_id": {"type": "string"}}, "required": ["target_id"]}},
+        {"name": "cdp_get_elements", "description": "Extract all interactive elements (buttons, links, inputs, selects) from the browser page with text, CSS selector, and bounding box. The web equivalent of ui_tree for desktop apps.", "input_schema": {"type": "object", "properties": {"max_elements": {"type": "integer", "default": 100, "description": "Maximum number of elements to return"}}}},
         {"name": "cdp_screenshot", "description": "Take a screenshot of the browser page", "input_schema": {"type": "object", "properties": {}}},
         {"name": "cdp_wait_for_selector", "description": "Wait until a CSS selector matches an element in the browser page. Returns match info or timeout error.", "input_schema": {"type": "object", "properties": {"selector": {"type": "string", "description": "CSS selector to wait for"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}, "required": ["selector"]}},
         {"name": "cdp_wait_for_navigation", "description": "Wait until browser URL contains a string or title contains a string. Useful after clicking links/submitting forms.", "input_schema": {"type": "object", "properties": {"url_contains": {"type": "string", "description": "Wait until URL contains this string"}, "title_contains": {"type": "string", "description": "Wait until title contains this string"}, "timeout": {"type": "number", "default": 15, "description": "Max seconds to wait"}}}},
@@ -840,6 +842,38 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         delay *= 2
                         continue
                     return {"type": "text", "text": f"CDP close_tab failed after {max_attempts} attempts: {e}"}
+
+        elif name == "cdp_get_elements":
+            cdp = _get_cdp()
+            if not cdp:
+                return {"type": "text", "text": "CDP not available"}
+            try:
+                max_el = input_data.get("max_elements", 100)
+                elements = cdp.client.get_interactive_elements(max_elements=max_el)
+                if not elements:
+                    return {"type": "text", "text": "(no interactive elements found on page)"}
+                # Format as compact readable text
+                lines = [f"Found {len(elements)} interactive elements:"]
+                for i, el in enumerate(elements):
+                    bbox = el.get("bbox", {})
+                    text = el.get("text", "")
+                    tag = el.get("tag", "?")
+                    sel = el.get("selector", "")
+                    role = el.get("role") or ""
+                    val = el.get("value")
+                    typ = el.get("type") or ""
+                    desc = f"[{i}] <{tag}{'['+typ+']' if typ else ''}> "
+                    if role:
+                        desc += f"role={role} "
+                    desc += f'"{text}" ' if text else ""
+                    if val:
+                        desc += f'value="{val}" '
+                    desc += f"sel=\"{sel}\" "
+                    desc += f"@({bbox.get('x',0)},{bbox.get('y',0)} {bbox.get('w',0)}x{bbox.get('h',0)})"
+                    lines.append(desc)
+                return {"type": "text", "text": "\n".join(lines)}
+            except Exception as e:
+                return {"type": "text", "text": f"cdp_get_elements error: {e}"}
 
         elif name == "cdp_screenshot":
             cdp = _get_cdp()
