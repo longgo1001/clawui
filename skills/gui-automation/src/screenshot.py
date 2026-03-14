@@ -278,16 +278,24 @@ def take_screenshot(
         cropped = img.crop((x, y, x + w, y + h))
         cropped.save(spath)
 
-    if scale and shutil.which("convert"):
+    if scale:
         try:
             screen_w, screen_h = get_screen_size()
             target = _select_target_resolution(screen_w, screen_h)
             if target:
                 tw, th = target
-                subprocess.run(
-                    ["convert", str(path), "-resize", f"{tw}x{th}!", str(path)],
-                    check=True, capture_output=True,
-                )
+                try:
+                    from PIL import Image
+                    img = Image.open(spath)
+                    resample = getattr(Image, 'LANCZOS', getattr(Image, 'ANTIALIAS', Image.BICUBIC))
+                    img = img.resize((tw, th), resample)
+                    img.save(spath)
+                except ImportError:
+                    if shutil.which("convert"):
+                        subprocess.run(
+                            ["convert", str(path), "-resize", f"{tw}x{th}!", str(path)],
+                            check=True, capture_output=True,
+                        )
         except Exception:
             pass
 

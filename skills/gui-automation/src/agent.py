@@ -19,6 +19,12 @@ from .actions import (
 )
 
 
+# --- Configurable delay constants (override via env vars) ---
+_LAUNCH_DELAY = float(os.getenv("CLAWUI_LAUNCH_DELAY", "1.0"))
+_WECHAT_LAUNCH_DELAY = float(os.getenv("CLAWUI_WECHAT_LAUNCH_DELAY", "2.0"))
+_NAV_DELAY = float(os.getenv("CLAWUI_NAV_DELAY", "2.0"))
+_OCR_ACTION_DELAY = float(os.getenv("CLAWUI_OCR_ACTION_DELAY", "1.0"))
+
 # --- Auto Action Verification state ---
 _last_screen_hash = None
 _VERIFY_ACTIONS = frozenset({
@@ -686,7 +692,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 import subprocess
                 full_cmd = [cmd] + args
                 proc = subprocess.Popen(full_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-                time.sleep(1)  # Give it a moment to start
+                time.sleep(_LAUNCH_DELAY)  # Give it a moment to start
                 return {"type": "dict", "pid": proc.pid, "cmd": full_cmd, "text": f"Launched: {full_cmd} (PID {proc.pid})"}
             except Exception as e:
                 return {"type": "text", "text": f"Launch failed: {e}"}
@@ -712,7 +718,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 else:
                     # Try snap
                     proc = subprocess.Popen(["snap", "run", "wechat-devtools"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-                time.sleep(2)
+                time.sleep(_WECHAT_LAUNCH_DELAY)
                 return {"type": "dict", "pid": proc.pid, "text": f"Launched WeChat DevTools (PID {proc.pid})"}
             except Exception as e:
                 return {"type": "text", "text": f"Launch WeChat DevTools failed: {e}"}
@@ -775,7 +781,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
 
             def _cdp_navigate_impl():
                 cdp.navigate(input_data["url"])
-                time.sleep(2)
+                time.sleep(_NAV_DELAY)
                 title = cdp.get_page_title()
                 return {"type": "text", "text": f"Navigated to {input_data['url']} - Title: {title}"}
 
@@ -906,7 +912,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
 
             def _ff_navigate_impl():
                 mc.navigate(input_data["url"])
-                time.sleep(2)
+                time.sleep(_NAV_DELAY)
                 info = {"url": mc.get_url(), "title": mc.get_title()}
                 return {"type": "text", "text": json.dumps(info, ensure_ascii=False)}
 
@@ -1099,7 +1105,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         cx, cy = matches[0]["center"]
                         click(cx, cy)
                         actions.append(f"clicked 测试号 at ({cx},{cy})")
-                        time.sleep(1.0)
+                        time.sleep(_OCR_ACTION_DELAY)
                         img_data = take_screenshot() or img_data
                         full_text = "\n".join([str(x.get("text", "")) for x in ocr_extract_lines(img_data, threshold=0.2)])
 
@@ -1111,7 +1117,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         cx, cy = matches[0]["center"]
                         click(cx, cy)
                         actions.append(f"clicked 重试 at ({cx},{cy})")
-                        time.sleep(1.0)
+                        time.sleep(_OCR_ACTION_DELAY)
                         img_data = take_screenshot() or img_data
 
                 # 3) Try click "创建" if present
@@ -1175,7 +1181,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         cx, cy = matches[-1]["center"]
                         click(cx, cy)
                         executed.append(f"click '{token}' at ({cx},{cy})")
-                        time.sleep(1.0)
+                        time.sleep(_OCR_ACTION_DELAY)
                         img_data = take_screenshot() or img_data
 
                 after_text = _full_text(img_data)
@@ -1428,6 +1434,11 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
     consecutive_errors = 0
     last_response = None
 
+    # Token tracking
+    total_input_tokens = 0
+    total_output_tokens = 0
+    max_tokens_budget = int(os.getenv("CLAWUI_MAX_TOKENS", "0"))  # 0 = unlimited
+
     for step in range(max_steps):
         print(f"\n--- Step {step + 1}/{max_steps} ---")
 
@@ -1447,6 +1458,20 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
             continue
 
         last_response = response
+
+        # Accumulate token usage
+        usage = response.get("usage", {})
+        step_in = usage.get("input_tokens", 0)
+        step_out = usage.get("output_tokens", 0)
+        total_input_tokens += step_in
+        total_output_tokens += step_out
+        if step_in or step_out:
+            print(f"  Tokens: in={step_in}, out={step_out} (total: in={total_input_tokens}, out={total_output_tokens})")
+
+        # Check token budget
+        if max_tokens_budget > 0 and (total_input_tokens + total_output_tokens) >= max_tokens_budget:
+            print(f"Token budget exceeded ({total_input_tokens + total_output_tokens} >= {max_tokens_budget}). Stopping.")
+            break
 
         # Process response
         assistant_content = []
@@ -1498,6 +1523,13 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
                 })
 
         messages.append({"role": "user", "content": tool_results})
+
+    # Final token summary
+    if total_input_tokens or total_output_tokens:
+        print(f"\n=== Token Usage Summary ===")
+        print(f"  Input tokens:  {total_input_tokens}")
+        print(f"  Output tokens: {total_output_tokens}")
+        print(f"  Total tokens:  {total_input_tokens + total_output_tokens}")
 
     if last_response and last_response.get("text"):
         return last_response["text"]

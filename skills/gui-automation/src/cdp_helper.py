@@ -141,14 +141,11 @@ def ensure_gui_environment():
                 print(f'[CDP] Auto-detected XAUTHORITY={path}')
                 break
 
-# Call it at module import to configure environment
-ensure_gui_environment()
-
-
 class CDPClient:
     """CDP client with persistent WebSocket connection for fast command execution."""
 
     def __init__(self, host: str = "127.0.0.1", port: int = 9222):
+        ensure_gui_environment()
         self.host = host
         self.port = port
         self._ws = None

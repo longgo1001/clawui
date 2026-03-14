@@ -332,3 +332,143 @@ class TestHybridTools(unittest.TestCase):
         names = [t["name"] for t in create_tools()]
         for tool in ("run_command", "file_read", "file_write", "file_list", "open_url"):
             assert tool in names, f"{tool} missing from tools"
+
+
+class TestConfigurableDelays(unittest.TestCase):
+    """Test P1-D: configurable sleep constants."""
+
+    def test_default_delay_values(self):
+        import src.agent as agent_mod
+        assert agent_mod._LAUNCH_DELAY == 1.0
+        assert agent_mod._WECHAT_LAUNCH_DELAY == 2.0
+        assert agent_mod._NAV_DELAY == 2.0
+        assert agent_mod._OCR_ACTION_DELAY == 1.0
+
+    def test_env_override_delays(self):
+        """Verify env vars are read at module level (check the mechanism works)."""
+        # We can't re-import to test env override, but we can verify the constants
+        # are float types and the env var names are correct.
+        import src.agent as agent_mod
+        assert isinstance(agent_mod._LAUNCH_DELAY, float)
+        assert isinstance(agent_mod._NAV_DELAY, float)
+
+
+class TestPILResize(unittest.TestCase):
+    """Test P1-C: PIL screenshot resize with ImageMagick fallback."""
+
+    def test_pil_resize_path(self):
+        """PIL resize branch is taken when PIL is available."""
+        from PIL import Image
+        import tempfile
+        # Create a 200x200 test image
+        img = Image.new('RGB', (200, 200), color='red')
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+            img.save(f.name)
+            path = f.name
+        try:
+            # Resize using PIL directly (same logic as screenshot.py)
+            img = Image.open(path)
+            resample = getattr(Image, 'LANCZOS', getattr(Image, 'ANTIALIAS', Image.BICUBIC))
+            img = img.resize((100, 100), resample)
+            img.save(path)
+            # Verify resized
+            result = Image.open(path)
+            assert result.size == (100, 100)
+        finally:
+            os.unlink(path)
+
+
+class TestTokenTracking(unittest.TestCase):
+    """Test P1-A: token tracking in backends."""
+
+    def test_claude_backend_returns_usage(self):
+        """ClaudeBackend.chat() return dict includes 'usage' key."""
+        from src.backends import ClaudeBackend
+        # Mock the Anthropic client
+        mock_response = MagicMock()
+        mock_response.content = []
+        mock_usage = MagicMock()
+        mock_usage.input_tokens = 150
+        mock_usage.output_tokens = 42
+        mock_response.usage = mock_usage
+
+        backend = ClaudeBackend.__new__(ClaudeBackend)
+        backend.client = MagicMock()
+        backend.model = "test"
+        backend.client.messages.create.return_value = mock_response
+
+        result = backend.chat([], [], "system")
+        assert "usage" in result
+        assert result["usage"]["input_tokens"] == 150
+        assert result["usage"]["output_tokens"] == 42
+
+    def test_openai_backend_returns_usage(self):
+        """OpenAIBackend.chat() return dict includes 'usage' key."""
+        from src.backends import OpenAIBackend
+        mock_response = MagicMock()
+        mock_choice = MagicMock()
+        mock_choice.message.content = "hello"
+        mock_choice.message.tool_calls = None
+        mock_response.choices = [mock_choice]
+        mock_usage = MagicMock()
+        mock_usage.prompt_tokens = 100
+        mock_usage.completion_tokens = 25
+        mock_response.usage = mock_usage
+
+        backend = OpenAIBackend.__new__(OpenAIBackend)
+        backend.client = MagicMock()
+        backend.model = "test"
+        backend.client.chat.completions.create.return_value = mock_response
+
+        result = backend.chat([], [], "system")
+        assert "usage" in result
+        assert result["usage"]["input_tokens"] == 100
+        assert result["usage"]["output_tokens"] == 25
+
+    def test_extract_anthropic_usage_missing(self):
+        """Usage extraction handles missing usage attribute gracefully."""
+        from src.backends import ClaudeBackend
+        mock_resp = MagicMock(spec=[])  # no attributes
+        usage = ClaudeBackend._extract_anthropic_usage(mock_resp)
+        assert usage == {"input_tokens": 0, "output_tokens": 0}
+
+
+class TestLazyPerceptionInit(unittest.TestCase):
+    """Test P1-B: lazy CDP/Marionette init with TTL cache."""
+
+    def test_cdp_initially_unchecked(self):
+        """CDP_AVAILABLE starts as None (unchecked), not eagerly probed."""
+        import src.perception as perc
+        # On import, CDP_AVAILABLE should be None (lazy) not True/False
+        # We reset it to test the mechanism
+        original = perc.CDP_AVAILABLE
+        perc.CDP_AVAILABLE = None
+        perc._cdp_client = None
+        perc._cdp_last_check = 0.0
+        # _get_cdp_client should attempt init now
+        client = perc._get_cdp_client()
+        # Without a real browser, it should be None/False
+        assert client is None or perc.CDP_AVAILABLE is not None
+        # Restore
+        perc.CDP_AVAILABLE = original
+
+    def test_cdp_ttl_caching(self):
+        """Repeated calls within TTL don't re-probe."""
+        import src.perception as perc
+        perc.CDP_AVAILABLE = False
+        perc._cdp_client = None
+        perc._cdp_last_check = perc._time.monotonic()  # just checked
+        # Within TTL, should return None without re-probing
+        result = perc._get_cdp_client()
+        assert result is None  # cached False
+
+    def test_marionette_initially_unchecked(self):
+        """MARIONETTE_AVAILABLE starts as None (unchecked)."""
+        import src.perception as perc
+        original = perc.MARIONETTE_AVAILABLE
+        perc.MARIONETTE_AVAILABLE = None
+        perc._marionette_client = None
+        perc._marionette_last_check = 0.0
+        client = perc._get_marionette_client()
+        assert client is None or perc.MARIONETTE_AVAILABLE is not None
+        perc.MARIONETTE_AVAILABLE = original

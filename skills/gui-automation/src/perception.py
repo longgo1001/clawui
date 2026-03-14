@@ -3,6 +3,7 @@
 import json
 import sys
 import subprocess
+import time as _time
 from typing import List, Tuple, Optional
 
 # Import backends
@@ -69,47 +70,33 @@ except Exception:
         X11_AVAILABLE = False
         print(f"[WARN] X11 backend not available: {e}", file=sys.stderr)
 
-try:
-    from .cdp_helper import CDPClient
-    _cdp_client = CDPClient()
-    CDP_AVAILABLE = _cdp_client.is_available()
-except Exception:
-    try:
-        from src.cdp_helper import CDPClient
-        _cdp_client = CDPClient()
-        CDP_AVAILABLE = _cdp_client.is_available()
-    except Exception as e:
-        CDP_AVAILABLE = False
-        _cdp_client = None
-        print(f"[WARN] CDP not available: {e}", file=sys.stderr)
+# --- Lazy CDP init (deferred to first use with TTL cache) ---
+_cdp_client = None
+CDP_AVAILABLE = None  # tri-state: None = unchecked, True, False
+_cdp_last_check = 0.0
+_CDP_TTL = float(__import__('os').environ.get("CLAWUI_CDP_TTL", "10.0"))
 
-# Marionette backend (Firefox)
-try:
-    from .marionette_helper import MarionetteClient
-    _marionette_client = MarionetteClient()
-    MARIONETTE_AVAILABLE = _marionette_client._connect()
-    if MARIONETTE_AVAILABLE:
-        _marionette_client.close()
-except Exception:
-    try:
-        from src.marionette_helper import MarionetteClient
-        _marionette_client = MarionetteClient()
-        MARIONETTE_AVAILABLE = _marionette_client._connect()
-        if MARIONETTE_AVAILABLE:
-            _marionette_client.close()
-    except Exception as e:
-        MARIONETTE_AVAILABLE = False
-        _marionette_client = None
-        print(f"[WARN] Marionette not available: {e}", file=sys.stderr)
+# --- Lazy Marionette init (deferred to first use with TTL cache) ---
+_marionette_client = None
+MARIONETTE_AVAILABLE = None  # tri-state: None = unchecked, True, False
+_marionette_last_check = 0.0
+_MARIONETTE_TTL = float(__import__('os').environ.get("CLAWUI_MARIONETTE_TTL", "10.0"))
 
 
 def _get_cdp_client() -> Optional['CDPClient']:
-    """Get CDP client, re-checking availability if needed."""
-    global CDP_AVAILABLE, _cdp_client
-    if _cdp_client and _cdp_client.is_available():
-        CDP_AVAILABLE = True
+    """Get CDP client with lazy init and TTL-cached availability check."""
+    global CDP_AVAILABLE, _cdp_client, _cdp_last_check
+    now = _time.monotonic()
+    # Return cached client if within TTL
+    if _cdp_client and CDP_AVAILABLE and (now - _cdp_last_check) < _CDP_TTL:
         return _cdp_client
-    # Try reconnecting
+    # Re-check: existing client might still work
+    if _cdp_client:
+        if _cdp_client.is_available():
+            CDP_AVAILABLE = True
+            _cdp_last_check = now
+            return _cdp_client
+    # (Re-)create client
     try:
         try:
             from .cdp_helper import CDPClient
@@ -117,30 +104,32 @@ def _get_cdp_client() -> Optional['CDPClient']:
             from src.cdp_helper import CDPClient
         _cdp_client = CDPClient()
         CDP_AVAILABLE = _cdp_client.is_available()
+        _cdp_last_check = now
         return _cdp_client if CDP_AVAILABLE else None
-    except:
+    except Exception:
         CDP_AVAILABLE = False
+        _cdp_last_check = now
         return None
 
 
 def _get_marionette_client() -> Optional['MarionetteClient']:
-    """Get Marionette client for Firefox, re-checking availability."""
-    global MARIONETTE_AVAILABLE, _marionette_client
+    """Get Marionette client with lazy init and TTL-cached availability check."""
+    global MARIONETTE_AVAILABLE, _marionette_client, _marionette_last_check
+    now = _time.monotonic()
+    # Return cached result if within TTL
+    if MARIONETTE_AVAILABLE is not None and (now - _marionette_last_check) < _MARIONETTE_TTL:
+        return _marionette_client if MARIONETTE_AVAILABLE else None
+    # Try existing client
     if _marionette_client:
         try:
-            # Quick check: can we connect? (_connect will set _sock if successful)
-            # Note: _connect() does a socket connect and reads hello; it's safe to test.
-            # We don't want to keep the connection open all the time; we'll use on-demand.
             if _marionette_client._connect():
-                # Connection succeeded, port is open. Close the test socket.
                 _marionette_client.close()
                 MARIONETTE_AVAILABLE = True
-                # Return a fresh client wrapper that will reconnect on use.
-                # Actually, we can return the same client; it will reconnect on next use.
+                _marionette_last_check = now
                 return _marionette_client
         except Exception:
             pass
-    # Try (re)connecting: create a new client and check availability
+    # (Re-)create client
     try:
         try:
             from .marionette_helper import MarionetteClient
@@ -148,12 +137,14 @@ def _get_marionette_client() -> Optional['MarionetteClient']:
             from src.marionette_helper import MarionetteClient
         _marionette_client = MarionetteClient()
         if _marionette_client._connect():
-            _marionette_client.close()  # close test socket; client will reconnect on use
+            _marionette_client.close()
             MARIONETTE_AVAILABLE = True
+            _marionette_last_check = now
             return _marionette_client
     except Exception:
         pass
     MARIONETTE_AVAILABLE = False
+    _marionette_last_check = now
     return None
 
 

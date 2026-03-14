@@ -50,7 +50,16 @@ class ClaudeBackend(AIBackend):
                     "input": block.input,
                 })
 
-        return {"text": text, "tool_calls": tool_calls, "raw_content": response.content}
+        usage = ClaudeBackend._extract_anthropic_usage(response)
+        return {"text": text, "tool_calls": tool_calls, "raw_content": response.content, "usage": usage}
+
+    @staticmethod
+    def _extract_anthropic_usage(response):
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        if hasattr(response, "usage") and response.usage:
+            usage["input_tokens"] = getattr(response.usage, "input_tokens", 0) or 0
+            usage["output_tokens"] = getattr(response.usage, "output_tokens", 0) or 0
+        return usage
 
 
 class OpenAIBackend(AIBackend):
@@ -172,7 +181,12 @@ class OpenAIBackend(AIBackend):
                 "name": tc["name"], "input": tc["input"]
             })())
 
-        return {"text": text, "tool_calls": tool_calls, "raw_content": raw_content}
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        if hasattr(response, "usage") and response.usage:
+            usage["input_tokens"] = getattr(response.usage, "prompt_tokens", 0) or 0
+            usage["output_tokens"] = getattr(response.usage, "completion_tokens", 0) or 0
+
+        return {"text": text, "tool_calls": tool_calls, "raw_content": raw_content, "usage": usage}
 
 
 class AnyRouterBackend(AIBackend):
@@ -217,7 +231,8 @@ class AnyRouterBackend(AIBackend):
                     "input": block.input,
                 })
 
-        return {"text": text, "tool_calls": tool_calls, "raw_content": response.content}
+        usage = ClaudeBackend._extract_anthropic_usage(response)
+        return {"text": text, "tool_calls": tool_calls, "raw_content": response.content, "usage": usage}
 
 
 class OllamaBackend(AIBackend):
