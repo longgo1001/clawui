@@ -25,6 +25,7 @@ import base64
 import os
 import subprocess
 import sys
+import time
 
 VERSION = "0.5.0"
 
@@ -295,6 +296,44 @@ def _parse_coords(coords: str) -> tuple[int, int]:
     return int(parts[0]), int(parts[1])
 
 
+def _run_wait(args) -> int:
+    deadline = time.time() + max(0.1, float(args.timeout))
+    interval = max(0.05, float(args.interval))
+
+    if args.text:
+        from .screenshot import take_screenshot
+        from .ocr_tool import ocr_find_text
+
+        while time.time() < deadline:
+            matches = ocr_find_text(take_screenshot(), args.text)
+            if matches:
+                best = sorted(matches, key=lambda m: m.get("score", 0), reverse=True)[0]
+                cx, cy = best.get("center", [None, None])
+                print(f"Found text '{best.get('text', args.text)}' at ({cx}, {cy})")
+                return 0
+            time.sleep(interval)
+
+        print(f"Timeout waiting for text: {args.text}", file=sys.stderr)
+        return 1
+
+    from .atspi_helper import find_elements
+
+    role = None
+    name = args.element
+    if ":" in args.element:
+        role, name = [x.strip() for x in args.element.split(":", 1)]
+
+    while time.time() < deadline:
+        found = find_elements(name=name, role=role)
+        if found:
+            print(f"Found element: {args.element} ({len(found)} match(es))")
+            return 0
+        time.sleep(interval)
+
+    print(f"Timeout waiting for element: {args.element}", file=sys.stderr)
+    return 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="clawui",
@@ -375,6 +414,14 @@ def main():
     inspect_p.add_argument("--save", help="Save annotated screenshot to file")
     inspect_p.add_argument("--ocr", action="store_true", help="Include OCR text extraction")
     inspect_p.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
+
+    # Wait (element/text appearance)
+    wait_p = subparsers.add_parser("wait", help="Wait for element or text to appear on screen")
+    wait_group = wait_p.add_mutually_exclusive_group(required=True)
+    wait_group.add_argument("--text", help="Wait for text to appear (OCR-based)")
+    wait_group.add_argument("--element", help="Wait for AT-SPI element by name/role (format: role:name or just name)")
+    wait_p.add_argument("--timeout", type=float, default=10.0, help="Timeout in seconds (default: 10)")
+    wait_p.add_argument("--interval", type=float, default=0.5, help="Poll interval in seconds (default: 0.5)")
 
     # Doctor (diagnostics)
     subparsers.add_parser("doctor", help="Check environment and diagnose issues")
@@ -608,6 +655,14 @@ def main():
 
     elif args.command == "inspect":
         return _run_inspect(args)
+
+    elif args.command == "wait":
+        try:
+            return _run_wait(args)
+        except ImportError as e:
+            return _import_error("wait dependencies", e)
+        except Exception as e:
+            return _runtime_error("wait", e)
 
     elif args.command == "doctor":
         return _run_doctor()

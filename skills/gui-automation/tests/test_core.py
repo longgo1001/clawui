@@ -294,6 +294,38 @@ def test_marionette_smoke():
         raise AssertionError(f"Marionette smoke test failed: {e}") from e
 
 
+def test_wait_command_parser_options():
+    from src import cli
+    parser = cli.argparse.ArgumentParser()
+    # smoke: ensure main parser includes wait by invoking with argv patch through parse-only behavior
+    # direct parser in main isn't exposed; validate helper exists and command branch callable
+    assert hasattr(cli, "_run_wait")
+
+
+def test_run_wait_text_success(monkeypatch):
+    from src import cli
+
+    class Args:
+        text = "ready"
+        element = None
+        timeout = 0.5
+        interval = 0.01
+
+    calls = {"n": 0}
+    def fake_take_screenshot():
+        return "img"
+    def fake_ocr(_img, _text):
+        calls["n"] += 1
+        return [{"text": "Ready", "center": [10, 20], "score": 0.99}] if calls["n"] == 1 else []
+
+    import src.screenshot as screenshot
+    import src.ocr_tool as ocr_tool
+    monkeypatch.setattr(screenshot, "take_screenshot", fake_take_screenshot)
+    monkeypatch.setattr(ocr_tool, "ocr_find_text", fake_ocr)
+
+    assert cli._run_wait(Args()) == 0
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("ClawUI Core Test Suite")

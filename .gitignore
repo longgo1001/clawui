@@ -34,6 +34,10 @@ __pycache__/
 .Python
 screenshots/
 screenshots/*.png
+# Test/debug artifacts
+*.png
+recordings/*.json
+test_cdp_screenshot.png
 .secrets/
 # Secrets
 # Sensitive configuration (local only)
