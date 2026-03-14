@@ -205,9 +205,14 @@
   4. 清理 nwjs GPU/Shader/Code Cache（黑屏残留）
   5. `--use-gl=swiftshader`（Wine 下 GPU 不可用）
 - **启动脚本**: `~/launch_wechat_devtools.sh`
-- **飞书发图**: 图片放 workspace 目录，用 `openclaw message send --media <path>` 发送
+- **飞书发图**: 当前会话内给用户回图，优先直接 `read <image_path>`（渠道会附图）；跨会话或指定目标时再用 `openclaw message send --target <dest> --media <path>`。
 - **ClawUI 控制 Wine 应用**: AT-SPI 不可用，必须 xdotool + 截图 + 颜色匹配定位
 
 ## 新增经验 (2026-03-14 午间)
 - **微信基础库下载故障可绕过**: `res.servicewechat.com` 在部分时段会出现 ECONNRESET/SSL reset，但重试并强制 IPv4 (`curl -4`) 可成功下载大文件（`1501.wxapkg`，约 34MB）；此前 0-byte 的 `3.14.2.wxvpkg` 是中断下载造成。
 - **NVIDIA Integrate 可用性**: `https://integrate.api.nvidia.com/v1` + `z-ai/glm4.7` API 连通；该模型返回内容主要在 `reasoning_content`，集成到 OpenAI 兼容客户端时需确认对该字段的兼容处理。
+
+## 微信开发者工具导入页绕过结论 (2026-03-14 下午)
+- 安装目录确认存在 `cli.bat` / `cli.js`，并支持 `open --project`，可绕过“导入页点击创建无效”问题，直接打开指定项目。
+- 在 Wine 环境下首次 CLI 调用常见阻塞点是 **IDE Service Port 关闭**（需交互确认 `y`）；另有端口冲突/等待端口超时问题，避免强制指定异常端口更稳。
+- 用户数据目录可通过 `WeappLocalData` 里的 `hash_key_map_2.json` + `localstorage_*`（`projectList`/`STATIC_CONFIG`/`last_compiled`）注入最近项目索引，作为 CLI 失败时的二级兜底。
