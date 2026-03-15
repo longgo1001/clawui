@@ -30,6 +30,179 @@ _VERIFY_ACTIONS = frozenset({
 })
 
 
+# --- P3-A: Context window compression ---
+_CONTEXT_MAX_TOKENS = int(os.getenv("CLAWUI_CONTEXT_MAX_TOKENS", "80000"))
+_CONTEXT_COMPRESS_RATIO = 0.6
+_CONTEXT_KEEP_RECENT = 6
+
+# --- P3-B: Dynamic model routing ---
+_PLAN_MODEL = os.getenv("CLAWUI_PLAN_MODEL", "")
+_EXEC_MODEL = os.getenv("CLAWUI_EXEC_MODEL", "")
+_VERIFY_MODEL = os.getenv("CLAWUI_VERIFY_MODEL", "")
+
+# --- P3-C: Response caching ---
+_CACHE_TTL = float(os.getenv("CLAWUI_CACHE_TTL", "5"))
+_tool_cache = {}
+_CACHEABLE_TOOLS = frozenset({
+    "ui_tree", "find_element", "cdp_page_info", "cdp_get_elements",
+    "list_windows", "cdp_list_tabs", "ff_page_info", "ff_list_tabs",
+    "list_recordings", "file_list",
+})
+
+# --- P3-F: Per-tool cost tracking ---
+_tool_token_stats = {}
+_phase_token_stats = {}
+
+
+def _estimate_tokens(messages):
+    """Estimate token count for a message list (~4 chars per token)."""
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            total += len(content) // 4
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    btype = block.get("type", "")
+                    if btype == "text":
+                        total += len(block.get("text", "")) // 4
+                    elif btype == "tool_result":
+                        inner = block.get("content", "")
+                        if isinstance(inner, str):
+                            total += len(inner) // 4
+                        elif isinstance(inner, list):
+                            for part in inner:
+                                if isinstance(part, dict) and part.get("type") == "text":
+                                    total += len(part.get("text", "")) // 4
+                                elif isinstance(part, dict) and part.get("type") == "image":
+                                    total += 1000  # image token estimate
+                    elif btype == "tool_use":
+                        total += len(json.dumps(block.get("input", {}))) // 4 + 20
+                elif isinstance(block, str):
+                    total += len(block) // 4
+        elif content is None:
+            # assistant messages with tool_calls may have content=None
+            tool_calls = msg.get("tool_calls", [])
+            for tc in tool_calls:
+                total += len(json.dumps(tc.get("input", {}))) // 4 + 20
+    return total
+
+
+def _compress_history(messages, keep_recent=None):
+    """Compress message history when estimated tokens exceed threshold.
+
+    Keeps the first message (task context) + a compressed summary of the
+    middle messages + the last ``keep_recent`` messages verbatim.
+    """
+    keep_recent = keep_recent or _CONTEXT_KEEP_RECENT
+    est = _estimate_tokens(messages)
+    threshold = int(_CONTEXT_MAX_TOKENS * _CONTEXT_COMPRESS_RATIO)
+    if est <= threshold or len(messages) <= keep_recent + 1:
+        return messages
+
+    first = messages[0]
+    recent = messages[-keep_recent:]
+    middle = messages[1:-keep_recent]
+
+    # Build a compact summary of the middle conversation
+    summary_parts = []
+    for msg in middle:
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            text = content[:120]
+        elif isinstance(content, list):
+            texts = []
+            for block in content:
+                if isinstance(block, dict):
+                    btype = block.get("type", "")
+                    if btype == "text":
+                        texts.append(block.get("text", "")[:60])
+                    elif btype == "tool_result":
+                        inner = block.get("content", "")
+                        if isinstance(inner, str):
+                            texts.append(f"[tool_result:{inner[:40]}]")
+                        else:
+                            texts.append("[tool_result:...]")
+                    elif btype == "tool_use":
+                        texts.append(f"[tool:{block.get('name','')}]")
+            text = " | ".join(texts)[:120]
+        else:
+            text = str(content)[:80] if content else ""
+        if text:
+            summary_parts.append(f"{role}: {text}")
+
+    summary_text = "[Context compressed] Prior conversation summary:\n" + "\n".join(summary_parts)
+
+    return [first, {"role": "user", "content": summary_text}] + recent
+
+
+# --- P3-C helpers ---
+def _cache_key(tool_name, input_data):
+    """Build a hashable cache key from tool name + sorted input."""
+    raw = json.dumps({"t": tool_name, "i": input_data}, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _cache_get(key):
+    """Return cached result if within TTL, else None."""
+    entry = _tool_cache.get(key)
+    if entry is None:
+        return None
+    ts, result = entry
+    if (_time.time() - ts) > _CACHE_TTL:
+        _tool_cache.pop(key, None)
+        return None
+    return result
+
+
+def _cache_set(key, result):
+    """Store result in cache with current timestamp."""
+    _tool_cache[key] = (_time.time(), result)
+
+
+# --- P3-F helpers ---
+def _track_tokens(name, usage):
+    """Track token usage for a specific tool or API call."""
+    if not usage:
+        return
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    if name not in _tool_token_stats:
+        _tool_token_stats[name] = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+    _tool_token_stats[name]["input_tokens"] += inp
+    _tool_token_stats[name]["output_tokens"] += out
+    _tool_token_stats[name]["calls"] += 1
+
+
+def _track_phase(phase, usage):
+    """Track token usage for a named phase (e.g., run_agent, plan_and_execute)."""
+    if not usage:
+        return
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    if phase not in _phase_token_stats:
+        _phase_token_stats[phase] = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+    _phase_token_stats[phase]["input_tokens"] += inp
+    _phase_token_stats[phase]["output_tokens"] += out
+    _phase_token_stats[phase]["calls"] += 1
+
+
+def get_token_stats():
+    """Return current per-tool and per-phase token statistics."""
+    return {
+        "tools": dict(_tool_token_stats),
+        "phases": dict(_phase_token_stats),
+    }
+
+
+def reset_token_stats():
+    """Reset all token tracking counters."""
+    _tool_token_stats.clear()
+    _phase_token_stats.clear()
+
+
 def _quick_screen_hash():
     """Take a quick screenshot and return its MD5 hash, or None on failure."""
     try:
@@ -286,7 +459,19 @@ def create_tools():
 def execute_tool(name: str, input_data: dict) -> dict:
     """Execute a tool and return result."""
     global _last_screen_hash
+
+    # P3-C: Check cache for cacheable read-only tools
+    if name in _CACHEABLE_TOOLS and _CACHE_TTL > 0:
+        ck = _cache_key(name, input_data)
+        cached = _cache_get(ck)
+        if cached is not None:
+            return cached
+
     result = _execute_tool_inner(name, input_data)
+
+    # P3-C: Cache result for cacheable tools
+    if name in _CACHEABLE_TOOLS and _CACHE_TTL > 0:
+        _cache_set(ck, result)
 
     # Update hash when screenshot tools produce images
     if name in ("screenshot", "cdp_screenshot", "ff_screenshot", "annotated_screenshot"):
@@ -620,43 +805,58 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             if not task:
                 return {"type": "text", "text": "Missing 'task' parameter"}
             max_steps = input_data.get("max_steps", 30)
+
+            # P3-B: Use planning model for initial call, exec model for steps
             try:
-                backend = get_backend()
+                plan_backend = get_backend(model_override=_PLAN_MODEL or None)
             except Exception as e:
                 return {"type": "text", "text": f"get_backend error: {e}"}
-            
+            try:
+                exec_backend = get_backend(model_override=_EXEC_MODEL or None)
+            except Exception:
+                exec_backend = plan_backend
+
             # Prepare tools list (exclude plan_and_execute to avoid recursion)
             all_tools = create_tools()
             tools = [t for t in all_tools if t["name"] != "plan_and_execute"]
-            
+
             messages = [{"role": "user", "content": task}]
             history = []
             step = 0
-            
+
             while step < max_steps:
+                # P3-A: Compress history before LLM call
+                messages = _compress_history(messages)
+
+                # Use plan_backend for the first call, exec_backend for subsequent
+                active_backend = plan_backend if step == 0 else exec_backend
                 try:
-                    resp = backend.chat(messages, tools, SYSTEM_PROMPT)
+                    resp = active_backend.chat(messages, tools, SYSTEM_PROMPT)
                 except Exception as e:
                     return {"type": "text", "text": f"LLM call failed at step {step}: {e}"}
-                
+
+                # P3-F: Track token usage
+                usage = resp.get("usage")
+                _track_phase("plan_and_execute", usage)
+
                 tool_calls = resp.get("tool_calls", [])
                 if not tool_calls:
                     # Task complete
                     summary = resp.get("text", "")
                     return {"type": "dict", "completed": True, "summary": summary, "steps": step, "history": history}
-                
+
                 # Process each tool call
                 for call in tool_calls:
                     tname = call["name"]
                     tinput = call["input"]
                     call_id = call.get("id", f"call_{step}_{len(history)}")
-                    
+
                     # Execute the tool
                     try:
                         tresult = execute_tool(tname, tinput)
                     except Exception as e:
                         tresult = {"type": "text", "text": f"Tool execution error: {e}"}
-                    
+
                     history.append({
                         "step": step + 1,
                         "tool": tname,
@@ -664,7 +864,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         "result": tresult,
                         "call_id": call_id
                     })
-                    
+
                     # Append assistant message with tool_use
                     messages.append({
                         "role": "assistant",
@@ -676,9 +876,9 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         "role": "user",
                         "content": f"Tool: {tname}\nResult: {json.dumps(tresult, ensure_ascii=False)}"
                     })
-                    
+
                 step += 1
-            
+
             return {"type": "dict", "completed": False, "summary": "Max steps reached", "steps": max_steps, "history": history}
 
         # Application launch tools
@@ -1441,7 +1641,7 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
               log_file: str = None):
     """
     Run the GUI automation agent for a given task.
-    
+
     Args:
         task: Natural language description of what to do
         max_steps: Maximum number of tool-use steps
@@ -1449,6 +1649,7 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
         log_file: Optional path to write structured JSON run log
     """
     import datetime
+    reset_token_stats()  # P3-F: Reset stats at start
     backend = get_backend(model)
     tools = create_tools()
 
@@ -1487,6 +1688,9 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
     for step in range(max_steps):
         print(f"\n--- Step {step + 1}/{max_steps} ---")
 
+        # P3-A: Compress history before LLM call
+        messages = _compress_history(messages)
+
         try:
             response = backend.chat(
                 messages=messages,
@@ -1505,6 +1709,13 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
                 return f"Agent stopped: 3 consecutive backend errors. Last: {e}"
             messages.append({"role": "user", "content": f"[System] Backend error occurred: {e}. Please retry."})
             continue
+
+        # P3-F: Track token usage per call
+        usage = response.get("usage")
+        _track_phase("run_agent", usage)
+        # Track per-tool: attribute usage to all tool calls in this step
+        for tc in response.get("tool_calls", []):
+            _track_tokens(tc.get("name", "unknown"), usage)
 
         last_response = response
 
@@ -1614,6 +1825,17 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
         run_log["status"] = "max_steps_reached"
     if last_response and last_response.get("text"):
         run_log["result"] = last_response["text"]
+
+    # P3-F: Print per-tool token breakdown
+    stats = get_token_stats()
+    if stats["tools"]:
+        print("\n--- Token Usage Breakdown ---")
+        for tname, tdata in sorted(stats["tools"].items()):
+            print(f"  {tname}: {tdata['input_tokens']}in + {tdata['output_tokens']}out ({tdata['calls']} calls)")
+    if stats["phases"]:
+        for pname, pdata in sorted(stats["phases"].items()):
+            print(f"  [{pname}]: {pdata['input_tokens']}in + {pdata['output_tokens']}out ({pdata['calls']} calls)")
+
     _save_log()
 
     if last_response and last_response.get("text"):
