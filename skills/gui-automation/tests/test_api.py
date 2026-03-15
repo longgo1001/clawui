@@ -114,3 +114,12 @@ def test_run_agent_timeout_signature():
     sig = inspect.signature(run_agent)
     assert "timeout" in sig.parameters, "run_agent must accept 'timeout' parameter"
     assert sig.parameters["timeout"].default is None, "timeout default should be None"
+
+
+def test_doctor_fix_supports_pep668_retry():
+    """doctor --fix should include a PEP 668 fallback install path."""
+    from pathlib import Path
+    cli_src = Path(__file__).resolve().parents[1] / "src" / "cli.py"
+    text = cli_src.read_text(encoding="utf-8")
+    assert "--break-system-packages" in text
+    assert "externally-managed" in text

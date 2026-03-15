@@ -207,22 +207,43 @@ def _run_doctor(fix: bool = False) -> int:
             return False
 
     def _pip_install(packages: list[str], label: str) -> bool:
-        """Attempt to install Python packages via pip."""
+        """Attempt to install Python packages via pip.
+
+        Handles PEP 668 (externally-managed environment) by retrying with
+        --break-system-packages when needed.
+        """
         if not fix:
             return False
         try:
             print(f"      🔧 Installing {label}...")
+            cmd = [sys.executable, "-m", "pip", "install", "--quiet"] + packages
             result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--quiet"] + packages,
+                cmd,
                 capture_output=True, text=True, timeout=120,
             )
             if result.returncode == 0:
                 print(f"      ✅ Installed {label}")
                 fixes_applied.append(f"Installed Python package(s): {', '.join(packages)}")
                 return True
-            else:
-                print(f"      ❌ Failed: {result.stderr[:200]}")
+
+            stderr = (result.stderr or "")
+            pep668 = "externally-managed-environment" in stderr or "--break-system-packages" in stderr
+            if pep668:
+                print("      ℹ️  Detected externally-managed Python (PEP 668), retrying with --break-system-packages")
+                retry_cmd = [sys.executable, "-m", "pip", "install", "--quiet", "--break-system-packages"] + packages
+                retry = subprocess.run(
+                    retry_cmd,
+                    capture_output=True, text=True, timeout=120,
+                )
+                if retry.returncode == 0:
+                    print(f"      ✅ Installed {label}")
+                    fixes_applied.append(f"Installed Python package(s): {', '.join(packages)}")
+                    return True
+                print(f"      ❌ Failed: {(retry.stderr or '')[:200]}")
                 return False
+
+            print(f"      ❌ Failed: {stderr[:200]}")
+            return False
         except Exception as e:
             print(f"      ❌ Install error: {e}")
             return False
