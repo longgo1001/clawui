@@ -107,7 +107,8 @@ def get_screen_size() -> tuple[int, int]:
                     parts = line.strip().split()
                     w, h = parts[0].split("x")
                     return int(w), int(h)
-        except Exception:
+        except Exception as e:
+            logger.warning("Screenshot scaling failed: %s", e)
             pass
 
     try:
@@ -193,26 +194,29 @@ def take_screenshot(
                     if len(el.extents) == 4:
                         region = el.extents
         except Exception as e:
-            print(f"[screenshot] window lookup failed: {e}")
+            logger.warning("Window lookup failed for %s: %s", window_name, e)
             region = None
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     path = OUTPUT_DIR / f"screenshot_{uuid4().hex}.png"
     spath = str(path)
     session_type = _get_session_type()
+    logger.info("Taking screenshot session_type=%s region=%s window_name=%s scale=%s", session_type, region, window_name, scale)
     captured = False
+    captured_fullscreen = False
 
     if region:
         x, y, w, h = region
-        # On X11 we can use scrot with region
+        # On X11 we can capture region directly via scrot.
         if session_type != "wayland" and shutil.which("scrot"):
             subprocess.run(
                 ["scrot", "-a", f"{x},{y},{w},{h}", spath],
                 check=True, capture_output=True,
             )
             captured = Path(spath).exists()
+            captured_fullscreen = False
         else:
-            # Wayland: take full then crop
+            # Wayland (or missing scrot): capture full screen first, then crop.
             captured = False
 
     if not captured:
@@ -230,7 +234,9 @@ def take_screenshot(
                     )
                     if Path(spath).exists() and Path(spath).stat().st_size > 0:
                         captured = True
-                except Exception:
+                        captured_fullscreen = True
+                except Exception as e:
+                    logger.debug("gnome-screenshot failed: %s", e)
                     pass
             if not captured and shutil.which("grim"):
                 try:
@@ -239,12 +245,18 @@ def take_screenshot(
                         check=True, capture_output=True, env=_dbus_env(),
                     )
                     captured = True
-                except Exception:
+                    captured_fullscreen = True
+                except Exception as e:
+                    logger.debug("grim failed: %s", e)
                     pass
             if not captured:
                 captured = _gnome_dbus_screenshot(spath)
+                if captured:
+                    captured_fullscreen = True
             if not captured:
                 captured = _kscreen_screenshot(spath)
+                if captured:
+                    captured_fullscreen = True
         else:
             # X11 fallback chain
             for cmd in [
@@ -256,21 +268,21 @@ def take_screenshot(
                     try:
                         subprocess.run(cmd, check=True, capture_output=True)
                         captured = True
+                        captured_fullscreen = True
+                        logger.debug("Captured screenshot with %s", cmd[0])
                         break
-                    except Exception:
+                    except Exception as e:
+                        logger.debug("Screenshot method %s failed: %s", cmd[0], e)
                         continue
 
         if not captured:
+            logger.error("No screenshot method worked")
             raise RuntimeError("No screenshot method worked. Tried GNOME D-Bus, grim, scrot, gnome-screenshot.")
 
     # If we captured full screen but wanted a region, crop it now
-    if region and not captured:
-        # Already captured full, now crop
-        pass
-    if region and (region[2] < 200 or region[3] < 150):
-        # We took a region already
-        pass
-    elif region and captured:
+    # Crop only when region was requested and we captured a full-screen image.
+    # If region was captured directly via scrot -a, cropping again would be wrong.
+    if region and captured and captured_fullscreen:
         from PIL import Image
         img = Image.open(spath)
         # Crop to region (x,y,w,h) from the full screenshot
@@ -288,14 +300,17 @@ def take_screenshot(
                     ["convert", str(path), "-resize", f"{tw}x{th}!", str(path)],
                     check=True, capture_output=True,
                 )
+                logger.debug("Scaled screenshot to %sx%s", tw, th)
         except Exception:
             pass
 
     if path.exists():
         data = base64.b64encode(path.read_bytes()).decode()
+        logger.debug("Screenshot captured successfully: %s", spath)
         path.unlink(missing_ok=True)
         return data
 
+    logger.error("Failed to take screenshot: output file missing")
     raise RuntimeError("Failed to take screenshot")
 
 

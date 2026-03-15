@@ -22,4 +22,27 @@ Full API:
     )
 """
 
+import logging
+
 __version__ = "0.8.1"
+
+logging.getLogger("clawui").addHandler(logging.NullHandler())
+
+
+def enable_logging(level=logging.DEBUG):
+    """Enable clawui logging to stderr with a readable format."""
+    logger = logging.getLogger("clawui")
+    logger.setLevel(level)
+
+    has_stream_handler = any(
+        isinstance(h, logging.StreamHandler) and getattr(h, "_clawui_handler", False)
+        for h in logger.handlers
+    )
+    if not has_stream_handler:
+        handler = logging.StreamHandler()
+        handler._clawui_handler = True  # type: ignore[attr-defined]
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+        logger.addHandler(handler)

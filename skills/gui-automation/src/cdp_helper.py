@@ -9,7 +9,10 @@ import time
 import socket
 import http.client
 import tempfile
+import logging
 from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger("clawui.cdp_helper")
 
 # Default persistent profile directory for auto-launched Chromium
 DEFAULT_USER_DATA_DIR = os.path.join(
@@ -66,7 +69,7 @@ def inherit_gui_session_env():
                     candidates.append(leader)
                     if display and not os.environ.get('DISPLAY'):
                         os.environ['DISPLAY'] = display
-                        print(f'[CDP] Inherited DISPLAY={display} from session leader {leader}')
+                        logger.info('Inherited DISPLAY=%s from session leader %s', display, leader)
     except Exception:
         pass
 
@@ -88,7 +91,7 @@ def inherit_gui_session_env():
                 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', ' WAYLAND_SOCKET']:
                     if key in env and not os.environ.get(key):
                         os.environ[key] = env[key]
-                        print(f'[CDP] Inherited {key}={env[key]} from PID {pid}')
+                        logger.debug('Inherited %s=%s from PID %s', key, env[key], pid)
         except Exception:
             continue
 
@@ -120,14 +123,14 @@ def ensure_gui_environment():
         for i in [0, 1]:
             if os.path.exists(f'/tmp/.X11-unix/X{i}'):
                 os.environ['DISPLAY'] = f':{i}'
-                print(f'[CDP] Auto-detected DISPLAY={":%d" % i}')
+                logger.info('Auto-detected DISPLAY=:%d', i)
                 break
 
     if not os.environ.get('WAYLAND_DISPLAY'):
         wayland_sock = f'/run/user/{os.getuid()}/wayland-0'
         if os.path.exists(wayland_sock):
             os.environ['WAYLAND_DISPLAY'] = 'wayland-0'
-            print('[CDP] Auto-detected WAYLAND_DISPLAY=wayland-0')
+            logger.info('Auto-detected WAYLAND_DISPLAY=wayland-0')
 
     if not os.environ.get('XAUTHORITY'):
         candidates = [
@@ -138,7 +141,7 @@ def ensure_gui_environment():
         for path in candidates:
             if os.path.exists(path):
                 os.environ['XAUTHORITY'] = path
-                print(f'[CDP] Auto-detected XAUTHORITY={path}')
+                logger.info('Auto-detected XAUTHORITY=%s', path)
                 break
 
 # Call it at module import to configure environment
@@ -322,7 +325,7 @@ class CDPClient:
         except ImportError:
             return False
         except Exception as e:
-            print(f"[CDP] WebSocket connect failed: {e}", file=sys.stderr)
+            logger.error('WebSocket connect failed: %s', e)
             return False
 
     def _send_cdp_command(self, ws_url: str, method: str, params: dict = None) -> Any:
@@ -704,7 +707,7 @@ def launch_chromium_with_cdp(port: int = 9222, url: str = "about:blank") -> Opti
         try:
             os.makedirs(profile_dir, exist_ok=True)
         except Exception as e:
-            print(f"[DEBUG] Cannot prepare profile dir {profile_dir}: {e}", file=sys.stderr)
+            logger.warning('Cannot prepare profile dir %s: %s', profile_dir, e)
             continue
 
         # Clean stale singleton lock
@@ -747,11 +750,11 @@ def launch_chromium_with_cdp(port: int = 9222, url: str = "about:blank") -> Opti
                 pass
             _, stderr = proc.communicate()
             if stderr:
-                print(f"[DEBUG] Command '{' '.join(cmd)}' failed: {stderr.decode('utf-8', 'ignore')[:240]}", file=sys.stderr)
+                logger.warning("Command '%s' failed: %s", ' '.join(cmd), stderr.decode('utf-8', 'ignore')[:240])
         except FileNotFoundError:
             continue
         except Exception as e:
-            print(f"[DEBUG] Exception launching '{' '.join(cmd)}': {e}", file=sys.stderr)
+            logger.error("Exception launching '%s': %s", ' '.join(cmd), e)
             continue
 
     return None

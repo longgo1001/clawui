@@ -7,7 +7,10 @@ Supports exact substring and fuzzy matching for resilient text finding.
 
 import os
 import sys
+import logging
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger("clawui.ocr_tool")
 
 # Add current module path
 sys.path.insert(0, os.path.dirname(__file__))

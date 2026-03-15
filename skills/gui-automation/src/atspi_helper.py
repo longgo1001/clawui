@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import functools
 import warnings
+import logging
+
+logger = logging.getLogger("clawui.atspi_helper")
 
 # Suppress known AT-SPI deprecation warnings (no replacement API available in Atspi 2.0)
 warnings.filterwarnings("ignore", message=".*Atspi\\.Action\\.get_action_name is deprecated.*")
@@ -28,6 +31,7 @@ def with_timeout(timeout_seconds=None):
             try:
                 return future.result(timeout=t)
             except FuturesTimeoutError:
+                logger.warning("AT-SPI call timed out: %s after %ss", fn.__name__, t)
                 raise TimeoutError(f"{fn.__name__} timed out after {t}s")
         return wrapper
     return decorator
@@ -116,6 +120,7 @@ def _to_element(node) -> UIElement | None:
 
 def list_applications() -> list[str]:
     """List all applications visible to AT-SPI."""
+    logger.debug("Listing AT-SPI applications")
     desktop = Atspi.get_desktop(0)
     apps = []
     for i in range(desktop.get_child_count()):
@@ -161,6 +166,7 @@ def find_elements(
         max_depth: Maximum tree depth to search
         visible_only: Only return visible elements
     """
+    logger.debug("find_elements called role=%s name=%s app_name=%s max_depth=%s", role, name, app_name, max_depth)
     if root is None:
         if app_name:
             # Scope search to matching application(s)
@@ -175,6 +181,7 @@ def find_elements(
 
     results = []
     _search(root, role, name, max_depth, 0, visible_only, results)
+    logger.debug("find_elements matched %d elements", len(results))
     return results
 
 
@@ -205,15 +212,21 @@ def _search(node, role, name, max_depth, depth, visible_only, results):
 
 def do_action(element: UIElement, action_name: str = "click") -> bool:
     """Execute an action on a UI element."""
+    logger.debug("Executing AT-SPI action '%s' on element '%s'", action_name, getattr(element, 'name', 'unknown'))
     try:
         action_iface = element._node.get_action_iface()
         if not action_iface:
+            logger.warning("Element has no AT-SPI action interface: %s", getattr(element, 'name', 'unknown'))
             return False
         for i in range(action_iface.get_n_actions()):
             if action_iface.get_action_name(i) == action_name:
-                return action_iface.do_action(i)
+                ok = action_iface.do_action(i)
+                logger.debug("AT-SPI action '%s' result=%s", action_name, ok)
+                return ok
+        logger.warning("AT-SPI action '%s' not supported on element '%s'", action_name, getattr(element, 'name', 'unknown'))
         return False
-    except Exception:
+    except Exception as e:
+        logger.error("AT-SPI action failed: %s", e)
         return False
 
 

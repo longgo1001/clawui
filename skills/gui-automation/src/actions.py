@@ -4,6 +4,9 @@ import subprocess
 import shlex
 import asyncio
 import shutil
+import logging
+
+logger = logging.getLogger("clawui.actions")
 
 TYPING_DELAY_MS = 12
 TYPING_CHUNK_SIZE = 50
@@ -11,7 +14,11 @@ TYPING_CHUNK_SIZE = 50
 
 def _run(cmd: str, **kwargs) -> subprocess.CompletedProcess:
     """Run a shell command."""
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True, **kwargs)
+    logger.debug("Running command: %s", cmd)
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, **kwargs)
+    if result.returncode != 0:
+        logger.warning("Command failed (%s): %s", result.returncode, cmd)
+    return result
 
 
 def _is_wayland() -> bool:
@@ -22,9 +29,12 @@ def _is_wayland() -> bool:
 def _get_tool() -> str:
     """Select input tool. Prefer xdotool (works via XWayland even on Wayland)."""
     if shutil.which("xdotool"):
+        logger.debug("Using input tool: xdotool")
         return "xdotool"
     if shutil.which("ydotool"):
+        logger.info("Using ydotool as fallback input backend")
         return "ydotool"
+    logger.error("No input tool found (xdotool/ydotool)")
     raise RuntimeError("No input tool found. Install xdotool or ydotool.")
 
 
@@ -49,6 +59,7 @@ def mouse_move(x: int, y: int):
 
 def click(x: int | None = None, y: int | None = None, button: str = "left"):
     """Click at position (or current position if x,y not given)."""
+    logger.debug("Click requested: x=%s y=%s button=%s", x, y, button)
     _ensure_display()
     tool = _get_tool()
     btn_map = {"left": 1, "middle": 2, "right": 3}
@@ -121,6 +132,7 @@ def scroll(direction: str = "down", amount: int = 3, x: int | None = None, y: in
 
 def type_text(text: str):
     """Type text with realistic delay."""
+    logger.debug("Typing text (%d chars)", len(text))
     _ensure_display()
     tool = _get_tool()
     for i in range(0, len(text), TYPING_CHUNK_SIZE):
@@ -146,6 +158,7 @@ def hotkey(*keys: str):
 
 def focus_window(name: str | None = None, window_id: int | None = None):
     """Focus a window by name or ID."""
+    logger.info("Focusing window: name=%s window_id=%s", name, window_id)
     tool = _get_tool()
     if window_id:
         _run(f"{tool} windowactivate {window_id}")
