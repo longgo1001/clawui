@@ -12,9 +12,10 @@ from dataclasses import dataclass, field
 
 from PIL import Image, ImageDraw, ImageFont
 
+# Expose OCR function at module level for easier monkeypatching in tests.
 try:
-    from .ocr_tool import ocr_extract_lines  # patchable symbol for tests
-except Exception:  # pragma: no cover - optional dependency
+    from .ocr_tool import ocr_extract_lines
+except Exception:  # pragma: no cover
     ocr_extract_lines = None
 
 
