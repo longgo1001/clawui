@@ -28,6 +28,7 @@ class LabeledElement:
     center_y: int
     source: str  # "atspi" or "cdp"
     selector: str | None = None  # CSS selector for CDP elements
+    confidence: float = 0.5  # P3-D: MoG cross-validation confidence
 
     def to_dict(self) -> dict:
         return {
@@ -39,6 +40,7 @@ class LabeledElement:
             "center": [self.center_x, self.center_y],
             "source": self.source,
             "selector": self.selector,
+            "confidence": self.confidence,
         }
 
 
@@ -144,6 +146,89 @@ def _dedup_elements(elements: list[dict]) -> list[dict]:
     return seen
 
 
+def _iou(box_a, box_b):
+    """Compute intersection-over-union for two (x, y, w, h) boxes."""
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
+
+    # Intersection
+    ix1 = max(ax, bx)
+    iy1 = max(ay, by)
+    ix2 = min(ax + aw, bx + bw)
+    iy2 = min(ay + ah, by + bh)
+
+    inter_w = max(0, ix2 - ix1)
+    inter_h = max(0, iy2 - iy1)
+    inter_area = inter_w * inter_h
+
+    area_a = aw * ah
+    area_b = bw * bh
+    union = area_a + area_b - inter_area
+
+    if union <= 0:
+        return 0.0
+    return inter_area / union
+
+
+def _ocr_cross_validate(elements, img_b64):
+    """Cross-validate detected elements against OCR text.
+
+    For each element, compute confidence based on:
+      - Base: 0.5
+      - Spatial overlap with OCR bboxes (up to +0.3)
+      - Name match with OCR text (up to +0.2)
+    """
+    try:
+        from .ocr_tool import ocr_extract_lines
+    except ImportError:
+        return elements  # OCR not available, return unchanged
+
+    try:
+        ocr_lines = ocr_extract_lines(img_b64, threshold=0.2)
+    except Exception:
+        return elements  # OCR failed, return unchanged
+
+    if not ocr_lines:
+        return elements
+
+    # Convert OCR bboxes from corner-point format to (x, y, w, h)
+    ocr_boxes = []
+    for line in ocr_lines:
+        bbox = line.get("bbox", [])
+        text = str(line.get("text", "")).strip().lower()
+        if len(bbox) >= 4:
+            # bbox is [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+            xs = [p[0] for p in bbox]
+            ys = [p[1] for p in bbox]
+            ox = int(min(xs))
+            oy = int(min(ys))
+            ow = int(max(xs) - min(xs))
+            oh = int(max(ys) - min(ys))
+            ocr_boxes.append((ox, oy, ow, oh, text))
+
+    for el in elements:
+        el_box = (el["x"], el["y"], el["width"], el["height"])
+        el_name = str(el.get("name", "")).strip().lower()
+
+        best_iou = 0.0
+        name_match = False
+
+        for ox, oy, ow, oh, otext in ocr_boxes:
+            iou_val = _iou(el_box, (ox, oy, ow, oh))
+            if iou_val > best_iou:
+                best_iou = iou_val
+            if el_name and otext and (el_name in otext or otext in el_name):
+                name_match = True
+
+        conf = 0.5
+        conf += min(best_iou, 1.0) * 0.3  # spatial overlap contribution
+        if name_match:
+            conf += 0.2
+        el["confidence"] = round(conf, 3)
+
+    return elements
+
+
 def annotated_screenshot(sources: str = "auto") -> tuple[str, list[LabeledElement]]:
     """
     Take a screenshot and overlay numbered labels on interactive elements.
@@ -168,6 +253,10 @@ def annotated_screenshot(sources: str = "auto") -> tuple[str, list[LabeledElemen
 
     # Take screenshot
     img_b64 = take_screenshot(scale=False)
+
+    # P3-D: OCR cross-validation to compute per-element confidence
+    elements = _ocr_cross_validate(elements, img_b64)
+
     img = Image.open(io.BytesIO(base64.b64decode(img_b64)))
     draw = ImageDraw.Draw(img)
 
@@ -197,6 +286,7 @@ def annotated_screenshot(sources: str = "auto") -> tuple[str, list[LabeledElemen
             center_x=cx, center_y=cy,
             source=el.get("source", "unknown"),
             selector=el.get("selector"),
+            confidence=el.get("confidence", 0.5),
         )
         labeled.append(le)
 

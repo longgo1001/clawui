@@ -259,9 +259,9 @@ class GeminiBackend(AIBackend):
     _convert_messages = OpenAIBackend._convert_messages
 
 
-def get_backend(model: str = None) -> AIBackend:
+def get_backend(model: str = None, model_override: str = None) -> AIBackend:
     """Get appropriate AI backend based on model name."""
-    model = model or os.getenv("GUI_AI_MODEL", "claude-sonnet-4-20250514")
+    model = model_override or model or os.getenv("GUI_AI_MODEL", "claude-sonnet-4-20250514")
 
     if "claude" in model or "anthropic" in model:
         return ClaudeBackend(model=model)

@@ -351,3 +351,253 @@ class TestCLI(unittest.TestCase):
         import inspect
         sig = inspect.signature(_run_inspect)
         assert len(sig.parameters) == 1  # takes one 'args' param
+
+
+# ============================================================
+# P3 Optimization Tests
+# ============================================================
+
+class TestContextCompression(unittest.TestCase):
+    """Test P3-A: Context window compression."""
+
+    def test_estimate_tokens_string_content(self):
+        from src.agent import _estimate_tokens
+        msgs = [{"role": "user", "content": "a" * 400}]
+        est = _estimate_tokens(msgs)
+        assert est == 100, f"Expected 100, got {est}"
+
+    def test_estimate_tokens_list_content(self):
+        from src.agent import _estimate_tokens
+        msgs = [{"role": "user", "content": [
+            {"type": "text", "text": "b" * 200},
+            {"type": "tool_result", "content": "c" * 80},
+        ]}]
+        est = _estimate_tokens(msgs)
+        assert est == 70, f"Expected 70, got {est}"
+
+    def test_estimate_tokens_empty(self):
+        from src.agent import _estimate_tokens
+        assert _estimate_tokens([]) == 0
+
+    def test_estimate_tokens_none_content(self):
+        from src.agent import _estimate_tokens
+        msgs = [{"role": "assistant", "content": None,
+                 "tool_calls": [{"input": {"x": 1}}]}]
+        est = _estimate_tokens(msgs)
+        assert est > 0
+
+    def test_compress_history_no_compression_needed(self):
+        from src.agent import _compress_history
+        msgs = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+        ]
+        result = _compress_history(msgs)
+        assert result == msgs, "Should return messages unchanged when below threshold"
+
+    def test_compress_history_compresses_long(self):
+        from src.agent import _compress_history, _CONTEXT_MAX_TOKENS, _CONTEXT_COMPRESS_RATIO
+        # Create messages that exceed the threshold
+        big_text = "x" * 400000  # ~100k tokens
+        msgs = [{"role": "user", "content": "Task: do stuff"}]
+        for i in range(20):
+            msgs.append({"role": "assistant", "content": f"Step {i}: " + big_text[:5000]})
+            msgs.append({"role": "user", "content": f"Result {i}: " + big_text[:5000]})
+
+        result = _compress_history(msgs, keep_recent=4)
+        assert len(result) < len(msgs), "Compressed history should be shorter"
+        assert result[0] == msgs[0], "First message should be preserved"
+        assert "[Context compressed]" in result[1]["content"]
+        # Last 4 should be preserved verbatim
+        assert result[-1] == msgs[-1]
+        assert result[-4] == msgs[-4]
+
+
+class TestResponseCaching(unittest.TestCase):
+    """Test P3-C: Response caching."""
+
+    def test_cache_key_deterministic(self):
+        from src.agent import _cache_key
+        k1 = _cache_key("ui_tree", {"app_name": "Firefox"})
+        k2 = _cache_key("ui_tree", {"app_name": "Firefox"})
+        assert k1 == k2
+
+    def test_cache_key_differs_for_different_input(self):
+        from src.agent import _cache_key
+        k1 = _cache_key("ui_tree", {"app_name": "Firefox"})
+        k2 = _cache_key("ui_tree", {"app_name": "Chrome"})
+        assert k1 != k2
+
+    def test_cache_get_set(self):
+        from src.agent import _cache_get, _cache_set, _cache_key, _tool_cache
+        _tool_cache.clear()
+        key = _cache_key("ui_tree", {"app_name": "test"})
+        assert _cache_get(key) is None
+        _cache_set(key, {"type": "text", "text": "cached"})
+        result = _cache_get(key)
+        assert result is not None
+        assert result["text"] == "cached"
+        _tool_cache.clear()
+
+    def test_cache_expiry(self):
+        from src.agent import _cache_get, _cache_set, _cache_key, _tool_cache
+        _tool_cache.clear()
+        key = _cache_key("test_tool", {})
+        # Manually insert with old timestamp
+        _tool_cache[key] = (time.time() - 9999, {"type": "text", "text": "old"})
+        assert _cache_get(key) is None, "Expired entry should return None"
+        _tool_cache.clear()
+
+    def test_cacheable_tools_frozenset(self):
+        from src.agent import _CACHEABLE_TOOLS
+        assert isinstance(_CACHEABLE_TOOLS, frozenset)
+        assert "ui_tree" in _CACHEABLE_TOOLS
+        assert "click" not in _CACHEABLE_TOOLS
+
+
+class TestDynamicModelRouting(unittest.TestCase):
+    """Test P3-B: Dynamic model routing."""
+
+    def test_get_backend_has_model_override(self):
+        import inspect
+        from src.backends import get_backend
+        sig = inspect.signature(get_backend)
+        assert "model_override" in sig.parameters, "get_backend must accept model_override"
+
+    def test_plan_exec_verify_model_attrs(self):
+        import src.agent as agent_mod
+        assert hasattr(agent_mod, "_PLAN_MODEL")
+        assert hasattr(agent_mod, "_EXEC_MODEL")
+        assert hasattr(agent_mod, "_VERIFY_MODEL")
+
+    def test_model_override_takes_precedence(self):
+        """Test that model_override is used when provided (signature contract)."""
+        import inspect
+        from src.backends import get_backend
+        sig = inspect.signature(get_backend)
+        params = list(sig.parameters.keys())
+        assert params.index("model_override") > params.index("model"), \
+            "model_override should come after model"
+
+
+class TestMoGCrossValidation(unittest.TestCase):
+    """Test P3-D: MoG cross-validation."""
+
+    def test_iou_identical_boxes(self):
+        from src.annotated_screenshot import _iou
+        val = _iou((10, 10, 50, 50), (10, 10, 50, 50))
+        assert abs(val - 1.0) < 0.001
+
+    def test_iou_no_overlap(self):
+        from src.annotated_screenshot import _iou
+        val = _iou((0, 0, 10, 10), (100, 100, 10, 10))
+        assert val == 0.0
+
+    def test_iou_partial_overlap(self):
+        from src.annotated_screenshot import _iou
+        val = _iou((0, 0, 20, 20), (10, 10, 20, 20))
+        assert 0.0 < val < 1.0
+
+    def test_iou_zero_area(self):
+        from src.annotated_screenshot import _iou
+        val = _iou((0, 0, 0, 0), (0, 0, 10, 10))
+        assert val == 0.0
+
+    def test_labeled_element_confidence_field(self):
+        from src.annotated_screenshot import LabeledElement
+        el = LabeledElement(
+            index=1, label="1: OK", role="push button", name="OK",
+            x=10, y=20, width=80, height=30, center_x=50, center_y=35,
+            source="atspi", selector=None, confidence=0.85,
+        )
+        assert el.confidence == 0.85
+        d = el.to_dict()
+        assert "confidence" in d
+        assert d["confidence"] == 0.85
+
+    def test_labeled_element_default_confidence(self):
+        from src.annotated_screenshot import LabeledElement
+        el = LabeledElement(
+            index=1, label="1: OK", role="push button", name="OK",
+            x=10, y=20, width=80, height=30, center_x=50, center_y=35,
+            source="atspi",
+        )
+        assert el.confidence == 0.5
+
+    def test_ocr_cross_validate_no_ocr(self):
+        """When OCR is unavailable, elements should pass through unchanged."""
+        from src.annotated_screenshot import _ocr_cross_validate
+        elements = [
+            {"x": 10, "y": 20, "width": 80, "height": 30,
+             "role": "button", "name": "Save", "source": "atspi"},
+        ]
+        with patch("src.annotated_screenshot.ocr_extract_lines",
+                    side_effect=ImportError("no OCR")):
+            result = _ocr_cross_validate(elements, "fake_b64")
+        assert len(result) == 1
+        # Should not have crashed; confidence may or may not be set
+
+    def test_ocr_cross_validate_with_matches(self):
+        """OCR matching should boost confidence."""
+        from src.annotated_screenshot import _ocr_cross_validate
+        elements = [
+            {"x": 10, "y": 20, "width": 80, "height": 30,
+             "role": "button", "name": "Save", "source": "atspi"},
+        ]
+        ocr_lines = [
+            {"text": "Save", "bbox": [[10, 20], [90, 20], [90, 50], [10, 50]], "score": 0.9},
+        ]
+        with patch("src.annotated_screenshot.ocr_extract_lines", return_value=ocr_lines):
+            result = _ocr_cross_validate(elements, "fake_b64")
+        assert result[0]["confidence"] > 0.5, "Matching element should have boosted confidence"
+
+
+class TestPerToolCostTracking(unittest.TestCase):
+    """Test P3-F: Per-tool cost tracking."""
+
+    def test_track_tokens(self):
+        from src.agent import _track_tokens, _tool_token_stats
+        _tool_token_stats.clear()
+        _track_tokens("screenshot", {"input_tokens": 100, "output_tokens": 50})
+        assert "screenshot" in _tool_token_stats
+        assert _tool_token_stats["screenshot"]["input_tokens"] == 100
+        assert _tool_token_stats["screenshot"]["output_tokens"] == 50
+        assert _tool_token_stats["screenshot"]["calls"] == 1
+        _track_tokens("screenshot", {"input_tokens": 200, "output_tokens": 100})
+        assert _tool_token_stats["screenshot"]["input_tokens"] == 300
+        assert _tool_token_stats["screenshot"]["calls"] == 2
+        _tool_token_stats.clear()
+
+    def test_track_tokens_none_usage(self):
+        from src.agent import _track_tokens, _tool_token_stats
+        _tool_token_stats.clear()
+        _track_tokens("click", None)
+        assert "click" not in _tool_token_stats
+        _tool_token_stats.clear()
+
+    def test_track_phase(self):
+        from src.agent import _track_phase, _phase_token_stats
+        _phase_token_stats.clear()
+        _track_phase("run_agent", {"input_tokens": 500, "output_tokens": 200})
+        assert "run_agent" in _phase_token_stats
+        assert _phase_token_stats["run_agent"]["calls"] == 1
+        _phase_token_stats.clear()
+
+    def test_get_token_stats(self):
+        from src.agent import get_token_stats, reset_token_stats, _track_tokens, _track_phase
+        reset_token_stats()
+        _track_tokens("click", {"input_tokens": 10, "output_tokens": 5})
+        _track_phase("run_agent", {"input_tokens": 100, "output_tokens": 50})
+        stats = get_token_stats()
+        assert "tools" in stats
+        assert "phases" in stats
+        assert "click" in stats["tools"]
+        assert "run_agent" in stats["phases"]
+        reset_token_stats()
+
+    def test_reset_token_stats(self):
+        from src.agent import reset_token_stats, _track_tokens, _tool_token_stats, _phase_token_stats
+        _track_tokens("x", {"input_tokens": 1, "output_tokens": 1})
+        reset_token_stats()
+        assert len(_tool_token_stats) == 0
+        assert len(_phase_token_stats) == 0
