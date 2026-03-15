@@ -251,7 +251,7 @@ class CDPClient:
 
     def click_element(self, selector: str) -> bool:
         """Click element by CSS selector."""
-        js = f'document.querySelector({json.dumps(selector)})?.click()'
+        js = f'document.querySelector("{selector}")?.click()'
         result = self.evaluate(js)
         return result is not None
 
@@ -260,10 +260,10 @@ class CDPClient:
         # Focus + set value + dispatch events
         js = f'''
         (function() {{
-            var el = document.querySelector({json.dumps(selector)});
+            var el = document.querySelector("{selector}");
             if (!el) return false;
             el.focus();
-            el.value = {json.dumps(text)};
+            el.value = "{text}";
             el.dispatchEvent(new Event("input", {{bubbles: true}}));
             el.dispatchEvent(new Event("change", {{bubbles: true}}));
             return true;
@@ -445,7 +445,7 @@ class CDPClient:
         if selector:
             self.evaluate(f'''
                 (function() {{
-                    const el = document.querySelector({json.dumps(selector)});
+                    const el = document.querySelector("{selector}");
                     if (el) {{ el.click(); el.focus(); return true; }}
                     return false;
                 }})()
@@ -769,24 +769,74 @@ def _is_port_listening(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
+def discover_cdp_ports() -> List[int]:
+    """Discover CDP debug ports from running Chrome/Chromium processes.
+
+    Scans /proc for browser processes with --remote-debugging-port flags.
+    Returns a list of active ports sorted by port number.
+    """
+    ports = set()
+    browser_names = {'chrome', 'chromium', 'chromium-browser', 'google-chrome',
+                     'google-chrome-stable', 'brave', 'brave-browser', 'msedge'}
+    try:
+        for pid_dir in os.listdir('/proc'):
+            if not pid_dir.isdigit():
+                continue
+            try:
+                cmdline_path = f'/proc/{pid_dir}/cmdline'
+                with open(cmdline_path, 'rb') as f:
+                    cmdline = f.read().decode('utf-8', errors='replace')
+                args = cmdline.split('\x00')
+                if not args:
+                    continue
+                # Check if this is a browser process
+                exe_name = os.path.basename(args[0]).lower()
+                if not any(bn in exe_name for bn in browser_names):
+                    continue
+                # Look for --remote-debugging-port=NNNN
+                for arg in args:
+                    if arg.startswith('--remote-debugging-port='):
+                        try:
+                            port = int(arg.split('=', 1)[1])
+                            if _is_port_listening(port):
+                                ports.add(port)
+                        except (ValueError, IndexError):
+                            pass
+            except (OSError, PermissionError):
+                continue
+    except OSError:
+        pass
+    return sorted(ports)
+
+
 def get_or_create_cdp_client(port: int = 9222) -> Optional[CDPClient]:
     """Get existing CDP connection or launch a browser automatically.
 
     If a browser is already running with CDP on the specified port, returns a client.
-    Otherwise, attempts to launch a suitable browser and returns a client connected to it.
+    Otherwise, auto-discovers CDP ports from running browsers.
+    As a last resort, launches a new browser with CDP enabled.
     """
+    # 1. Try the requested port first
     client = CDPClient(port=port)
     if client.is_available():
         return client
 
-    # Sync cookies from main profile before launching
-    sync_cookies_from_main_profile(port=port)
+    # 2. Auto-discover CDP ports from running browser processes
+    discovered = discover_cdp_ports()
+    for dport in discovered:
+        if dport == port:
+            continue  # Already tried
+        client = CDPClient(port=dport)
+        if client.is_available():
+            return client
 
-    # Try to launch a browser
+    # 3. Launch a new browser as last resort
+    sync_cookies_from_main_profile(port=port)
     proc = launch_chromium_with_cdp(port=port)
     if proc:
         # Wait a moment for CDP to be ready
         time.sleep(2)
+        client = CDPClient(port=port)
         if client.is_available():
             return client
         # Additional wait if needed
