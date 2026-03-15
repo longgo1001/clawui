@@ -373,7 +373,8 @@ class TestCLI(unittest.TestCase):
 
     def test_cli_version(self):
         from clawui.cli import VERSION
-        assert VERSION == "0.8.0"
+        from clawui import __version__
+        assert VERSION == __version__
 
     def test_run_inspect_function_exists(self):
         from clawui.cli import _run_inspect

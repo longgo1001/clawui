@@ -27,7 +27,9 @@ import subprocess
 import sys
 import time
 
-VERSION = "0.8.0"
+from . import __version__
+
+VERSION = __version__
 
 
 def _import_error(module_name: str, exc: Exception) -> int:

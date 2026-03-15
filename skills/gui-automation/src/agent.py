@@ -792,6 +792,13 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 result = cdp.type_in_element(input_data["selector"], input_data["text"])
                 return {"type": "text", "text": f"Typed into '{input_data['selector']}': {result}"}
 
+            def _cdp_fill_impl():
+                from .api import _BrowserAPI
+                b = _BrowserAPI()
+                b._helper = cdp.client
+                b.fill(input_data["label"], input_data["text"])
+                return {"type": "text", "text": f"Filled field '{input_data['label']}' with text"}
+
             def _cdp_eval_impl():
                 result = cdp.evaluate(input_data["expression"])
                 return {"type": "text", "text": f"JS result: {json.dumps(result, ensure_ascii=False)[:500]}"}
@@ -884,6 +891,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 "cdp_navigate": ("CDP navigate", _cdp_navigate_impl),
                 "cdp_click": ("CDP click", _cdp_click_impl),
                 "cdp_type": ("CDP type", _cdp_type_impl),
+                "cdp_fill": ("CDP fill", _cdp_fill_impl),
                 "cdp_eval": ("CDP eval", _cdp_eval_impl),
                 "cdp_page_info": ("CDP page_info", _cdp_page_info_impl),
                 "cdp_click_at": ("CDP click_at", _cdp_click_at_impl),
