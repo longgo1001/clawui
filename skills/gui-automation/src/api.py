@@ -325,18 +325,55 @@ class _BrowserAPI:
             import time
             time.sleep(1)
 
-    def click_text(self, text: str):
-        """Click on an element containing the given text."""
+    def click_text(self, text: str, exact: bool = False):
+        """Click on an element containing the given text.
+
+        Searches all visible elements in the DOM, prioritizing interactive
+        elements (buttons, links, inputs) over static ones (spans, divs).
+
+        Args:
+            text: Text to search for.
+            exact: If True, match the full trimmed textContent exactly.
+                   If False (default), match as substring.
+        """
         h = self._get_helper()
         js = f'''
         (function() {{
-            const els = document.querySelectorAll('a, button, input, [role="button"], [onclick]');
-            for (const el of els) {{
-                if (el.textContent && el.textContent.trim().includes({json.dumps(text)})) {{
-                    el.click();
-                    return "clicked";
-                }}
+            const searchText = {json.dumps(text)};
+            const exact = {json.dumps(exact)};
+            // Priority tiers: interactive first, then any visible element
+            const interactive = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [onclick], [tabindex]';
+            const allVisible = '*';
+
+            function matches(el) {{
+                const t = el.textContent ? el.textContent.trim() : '';
+                if (!t) return false;
+                if (exact) return t === searchText;
+                return t.toLowerCase().includes(searchText.toLowerCase());
             }}
+
+            function isVisible(el) {{
+                if (!el.offsetParent && el.tagName !== 'BODY' && el.tagName !== 'HTML') return false;
+                const style = window.getComputedStyle(el);
+                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+            }}
+
+            function findSmallest(selector) {{
+                const els = document.querySelectorAll(selector);
+                let best = null;
+                let bestLen = Infinity;
+                for (const el of els) {{
+                    if (!matches(el) || !isVisible(el)) continue;
+                    const len = (el.textContent || '').length;
+                    if (len < bestLen) {{ best = el; bestLen = len; }}
+                }}
+                return best;
+            }}
+
+            // Try interactive elements first (smallest matching text = most specific)
+            let el = findSmallest(interactive);
+            if (!el) el = findSmallest(allVisible);
+            if (el) {{ el.click(); return "clicked"; }}
             return "not found";
         }})()
         '''
@@ -349,14 +386,38 @@ class _BrowserAPI:
         h = self._get_helper()
         h.evaluate(f'document.querySelector({json.dumps(selector)}).click()')
 
-    def type_into(self, selector: str, text: str):
-        """Type text into an input element matching a CSS selector."""
+    def type_into(self, selector: str, text: str, clear: bool = True):
+        """Type text into an input element matching a CSS selector.
+
+        Uses proper DOM events (focus, input, change) for compatibility
+        with React, Vue, Angular and other frontend frameworks.
+
+        Args:
+            selector: CSS selector for the target input element.
+            text: Text to type.
+            clear: Clear existing value before typing (default True).
+        """
         h = self._get_helper()
         h.evaluate(f'''
         (function() {{
             const el = document.querySelector({json.dumps(selector)});
-            if (el) {{ el.focus(); el.value = {json.dumps(text)}; 
-                       el.dispatchEvent(new Event('input', {{bubbles:true}})); }}
+            if (!el) return "not found";
+            el.focus();
+            el.dispatchEvent(new Event('focus', {{bubbles:true}}));
+            {f'el.value = "";' if clear else ''}
+            const nativeSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value'
+            )?.set || Object.getOwnPropertyDescriptor(
+                window.HTMLTextAreaElement.prototype, 'value'
+            )?.set;
+            if (nativeSetter) {{
+                nativeSetter.call(el, {json.dumps(text)});
+            }} else {{
+                el.value = {json.dumps(text)};
+            }}
+            el.dispatchEvent(new Event('input', {{bubbles:true}}));
+            el.dispatchEvent(new Event('change', {{bubbles:true}}));
+            return "ok";
         }})()
         ''')
 

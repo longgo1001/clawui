@@ -334,12 +334,46 @@ class TestHybridTools(unittest.TestCase):
             assert tool in names, f"{tool} missing from tools"
 
 
+class TestPublicAPI(unittest.TestCase):
+    """Tests for public Python API reliability behaviors."""
+
+    def test_browser_click_text_searches_broad_elements(self):
+        from src.api import _BrowserAPI
+
+        helper = MagicMock()
+        helper.evaluate.return_value = {"result": {"value": "clicked"}}
+
+        api = _BrowserAPI()
+        api._helper = helper
+        api.click_text("Sign in")
+
+        js = helper.evaluate.call_args[0][0]
+        assert "const interactive" in js
+        assert "const allVisible = '*'" in js
+        assert "toLowerCase().includes" in js
+
+    def test_browser_type_into_dispatches_framework_events(self):
+        from src.api import _BrowserAPI
+
+        helper = MagicMock()
+        helper.evaluate.return_value = {"result": {"value": "ok"}}
+
+        api = _BrowserAPI()
+        api._helper = helper
+        api.type_into("#email", "a@b.com")
+
+        js = helper.evaluate.call_args[0][0]
+        assert "nativeSetter" in js
+        assert "dispatchEvent(new Event('input'" in js
+        assert "dispatchEvent(new Event('change'" in js
+
+
 class TestCLI(unittest.TestCase):
     """Tests for CLI module."""
 
     def test_cli_version(self):
         from src.cli import VERSION
-        assert VERSION == "0.6.0"
+        assert VERSION == "0.7.0"
 
     def test_run_inspect_function_exists(self):
         from src.cli import _run_inspect
