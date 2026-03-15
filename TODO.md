@@ -34,6 +34,7 @@
 
 ## 📋 Next Up
 - [x] 响应 GitHub Issues（如有）(Updated 2026-03-13: could not authenticate gh CLI; GITHUB_TOKEN integration incomplete)
+- [x] **Logging migration v0.8.2** (2026-03-16): Complete print→logging migration in agent.py/screenshot.py, add --log-level CLI flag and CLAWUI_LOG_LEVEL env var
 
 ---
-Last updated: 2026-03-13
+Last updated: 2026-03-16
