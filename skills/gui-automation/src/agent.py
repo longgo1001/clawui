@@ -259,7 +259,7 @@ def create_tools():
         {"name": "list_recordings", "description": "List available recorded scripts", "input_schema": {"type": "object", "properties": {}}},
         # OCR-based text detection (fast, CPU-friendly)
         {"name": "find_text", "description": "Find text on screen using OCR (RapidOCR/Tesseract). Returns list of occurrences with center coordinates and scores. Supports partial match.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to find (case-insensitive partial match)"}}, "required": ["text"]}},
-        {"name": "wait_for_text", "description": "Wait until specified text appears on screen using OCR polling. Returns first match coordinates and elapsed time.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to wait for (case-insensitive partial match)"}, "timeout": {"type": "number", "default": 30, "description": "Maximum seconds to wait"}, "poll_interval": {"type": "number", "default": 0.5, "description": "Seconds between OCR polls"}}, "required": ["text"]}},
+        {"name": "wait_for_text", "description": "Wait until specified text appears on screen using OCR polling. Supports fuzzy matching to tolerate OCR errors (e.g. 'O' vs '0'). Returns first match coordinates and elapsed time.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to wait for (case-insensitive partial match)"}, "timeout": {"type": "number", "default": 30, "description": "Maximum seconds to wait"}, "poll_interval": {"type": "number", "default": 0.5, "description": "Seconds between OCR polls"}, "fuzzy": {"type": "boolean", "default": False, "description": "Enable fuzzy matching to tolerate OCR misreads (edit distance <= 2)"}, "max_edit_distance": {"type": "integer", "default": 2, "description": "Max edit distance for fuzzy matching"}}, "required": ["text"]}},
         # OCR-based click (find text + click in one step)
         {"name": "click_text", "description": "Find text on screen via OCR and click its center. Combines find_text + click in one step. Retries up to 3 times with increasing delay if text not found.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to find and click (case-insensitive partial match)"}, "button": {"type": "string", "enum": ["left", "right", "double"], "default": "left"}, "index": {"type": "integer", "default": 0, "description": "Which occurrence to click if multiple matches (0=first, -1=last)"}, "timeout": {"type": "number", "default": 5, "description": "Max seconds to retry finding the text"}}, "required": ["text"]}},
         {"name": "screen_inspect", "description": "Inspect screenshot content via OCR and return detected hints/errors with recommended next actions. Use this before critical clicks if UI seems unresponsive.", "input_schema": {"type": "object", "properties": {"keywords": {"type": "array", "items": {"type": "string"}, "description": "Optional keywords to detect, e.g. ['无 AppID','错误','失败']"}}}},
@@ -1002,6 +1002,8 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 return {"type": "text", "text": "Missing 'text' parameter"}
             timeout = input_data.get("timeout", 30)
             poll_interval = input_data.get("poll_interval", 0.5)
+            fuzzy = input_data.get("fuzzy", False)
+            max_edit_distance = input_data.get("max_edit_distance", 2)
             start = time.time()
             while time.time() - start < timeout:
                 try:
@@ -1010,7 +1012,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         time.sleep(poll_interval)
                         continue
                     from .ocr_tool import ocr_find_text
-                    matches = ocr_find_text(img_data, text)
+                    matches = ocr_find_text(img_data, text, fuzzy=fuzzy, max_edit_distance=max_edit_distance)
                     if matches:
                         elapsed = time.time() - start
                         return {"type": "dict", "matches": matches, "count": len(matches), "elapsed": round(elapsed, 2), "text": f"Text appeared after {elapsed:.1f}s: {len(matches)} occurrence(s)"}

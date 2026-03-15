@@ -476,14 +476,31 @@ def wait_for_text(
     text: str,
     timeout: float = 10.0,
     interval: float = 1.0,
+    fuzzy: bool = False,
+    max_edit_distance: int = 2,
 ) -> bool:
-    """Wait for text to appear on screen via OCR. Returns True if found."""
+    """Wait for text to appear on screen via OCR. Returns True if found.
+
+    Args:
+        text: Text to search for (case-insensitive substring match).
+        timeout: Max seconds to wait.
+        interval: Seconds between OCR polls.
+        fuzzy: Enable fuzzy matching to tolerate OCR errors.
+        max_edit_distance: Max Levenshtein distance for fuzzy matching.
+    """
     import time
+    from .ocr_tool import _fuzzy_match
+
     deadline = time.time() + timeout
     while time.time() < deadline:
         lines = ocr()
         for line in lines:
-            if text.lower() in line.get("text", "").lower():
-                return True
+            line_text = line.get("text", "")
+            if fuzzy:
+                if _fuzzy_match(text, line_text, max_edit_distance):
+                    return True
+            else:
+                if text.lower() in line_text.lower():
+                    return True
         time.sleep(interval)
     return False

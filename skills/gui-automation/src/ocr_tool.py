@@ -2,11 +2,12 @@
 
 Primary: RapidOCR (fastest, ~150ms)
 Fallback: Tesseract (slower but universal)
+Supports exact substring and fuzzy matching for resilient text finding.
 """
 
 import os
 import sys
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Add current module path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -95,94 +96,100 @@ def ocr_extract_lines(image_data: str, threshold: float = 0.0) -> List[Dict[str,
         return []
 
 
-def ocr_find_text(image_data: str, text: str, threshold: float = 0.3) -> List[Dict[str, Any]]:
+def _fuzzy_match(needle: str, haystack: str, max_distance: int = 2) -> bool:
+    """Check if needle approximately matches haystack using edit distance.
+
+    Supports substring fuzzy matching: returns True if any substring of
+    haystack of length close to needle has edit distance <= max_distance.
+    This handles common OCR errors like 'O' vs '0', 'l' vs '1', etc.
+    """
+    needle_lower = needle.lower()
+    haystack_lower = haystack.lower()
+
+    # Exact substring check first (fast path)
+    if needle_lower in haystack_lower:
+        return True
+
+    if max_distance <= 0:
+        return False
+
+    # Simple Levenshtein for short strings
+    n_len = len(needle_lower)
+    h_len = len(haystack_lower)
+
+    if n_len == 0:
+        return True
+    if h_len == 0:
+        return False
+
+    # For short needles, check full-string distance
+    if n_len <= 3:
+        return _levenshtein(needle_lower, haystack_lower) <= max_distance
+
+    # Sliding window: check substrings of haystack close to needle length
+    window = n_len + max_distance
+    for i in range(max(1, h_len - window + 1)):
+        sub = haystack_lower[i:i + window]
+        if _levenshtein(needle_lower, sub) <= max_distance:
+            return True
+
+    return False
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    """Compute Levenshtein edit distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+
+    prev_row = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        curr_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            cost = 0 if c1 == c2 else 1
+            curr_row.append(min(
+                curr_row[j] + 1,        # insert
+                prev_row[j + 1] + 1,    # delete
+                prev_row[j] + cost      # substitute
+            ))
+        prev_row = curr_row
+    return prev_row[-1]
+
+
+def ocr_find_text(
+    image_data: str,
+    text: str,
+    threshold: float = 0.3,
+    fuzzy: bool = False,
+    max_edit_distance: int = 2,
+) -> List[Dict[str, Any]]:
     """
     Find occurrences of `text` in screenshot via OCR.
     Returns list of matches: [{text, bbox: [[x1,y1],[x2,y2],...], center: [x,y], score}]
-    Uses global engine; threshold 0.3 by default for better recall.
-    """
-    # Try RapidOCR first if available
-    if _has_rapidocr and _ocr_engine is not None:
-        try:
-            # image_data is base64 string without data: prefix
-            if image_data.startswith('data:'):
-                import base64
-                header, b64 = image_data.split(',', 1)
-                image_bytes = base64.b64decode(b64)
-            else:
-                import base64
-                image_bytes = base64.b64decode(image_data)
-            
-            result, _ = _ocr_engine(image_bytes)
-            matches = []
-            if result:
-                for box, ocr_text, score in result:
-                    if text.lower() in ocr_text.lower() and score >= threshold:
-                        # Compute center
-                        xs = [p[0] for p in box]
-                        ys = [p[1] for p in box]
-                        center = [int(sum(xs)/len(xs)), int(sum(ys)/len(ys))]
-                        matches.append({
-                            "text": ocr_text,
-                            "bbox": box,
-                            "center": center,
-                            "score": float(score)
-                        })
-            return matches
-        except Exception as e:
-            print(f"[ocr_find_text] RapidOCR failed: {e}")
-            # Fall through to Tesseract if RapidOCR errors out
-            pass
-    
-    # Fallback to Tesseract
-    try:
-        # Ensure image_bytes is defined for Tesseract fallback
-        if 'image_bytes' not in locals():
-            if image_data.startswith('data:'):
-                import base64
-                header, b64 = image_data.split(',', 1)
-                image_bytes = base64.b64decode(b64)
-            else:
-                import base64
-                image_bytes = base64.b64decode(image_data)
 
-        import subprocess
-        import tempfile
-        # Save image to temp file
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            tmp.write(image_bytes)
-            tmp_path = tmp.name
-        
-        # Run tesseract with TSV output
-        cmd = ['tesseract', tmp_path, 'stdout', '--psm', '11', 'tsv']
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        os.unlink(tmp_path)
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"Tesseract error: {result.stderr}")
-        
-        lines = result.stdout.strip().split('\n')
-        matches = []
-        import csv
-        reader = csv.DictReader(lines, delimiter='\t')
-        for row in reader:
-            if 'text' in row and 'left' in row:
-                if text.lower() in row['text'].lower():
-                    x = int(row['left']) + int(row['width'])/2
-                    y = int(row['top']) + int(row['height'])/2
-                    matches.append({
-                        "text": row['text'],
-                        "bbox": [[int(row['left']), int(row['top'])],
-                                 [int(row['left'])+int(row['width']), int(row['top'])],
-                                 [int(row['left'])+int(row['width']), int(row['top'])+int(row['height'])],
-                                 [int(row['left']), int(row['top'])+int(row['height'])]],
-                        "center": [int(x), int(y)],
-                        "score": 0.5  # Tesseract has no confidence
-                    })
-        return matches
-    except Exception as e:
-        print(f"[ocr_find_text] Tesseract failed: {e}")
-        return []
+    Args:
+        image_data: Base64-encoded image (with or without data: URI prefix).
+        text: Text to search for (case-insensitive substring match).
+        threshold: Minimum OCR confidence score (default 0.3).
+        fuzzy: Enable fuzzy matching to tolerate OCR errors (e.g. 'O'/'0').
+        max_edit_distance: Max Levenshtein distance for fuzzy matching (default 2).
+
+    Uses ocr_extract_lines internally — no duplicated OCR logic.
+    """
+    all_lines = ocr_extract_lines(image_data, threshold=threshold)
+    matches = []
+
+    for line in all_lines:
+        ocr_text = line.get("text", "")
+        if fuzzy:
+            if _fuzzy_match(text, ocr_text, max_edit_distance):
+                matches.append(line)
+        else:
+            if text.lower() in ocr_text.lower():
+                matches.append(line)
+
+    return matches
 
 
 # Standalone test
