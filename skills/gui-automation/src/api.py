@@ -39,9 +39,7 @@ import base64
 import functools
 import json
 import logging
-import os
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -244,7 +242,7 @@ def right_click(
     coords: Optional[tuple[int, int]] = None,
 ):
     """Right-click a UI element by text label or screen coordinates."""
-    from .actions import right_click as _rclick, click as _click
+    from .actions import right_click as _rclick
 
     if coords:
         _rclick(x=coords[0], y=coords[1])
@@ -344,6 +342,11 @@ def windows() -> list[dict]:
 # ---------------------------------------------------------------------------
 # Browser: CDP automation
 # ---------------------------------------------------------------------------
+
+def _clear_value_js() -> str:
+    """Return JS snippet to clear an input's value (Python 3.10 compatible)."""
+    return '"best.value = \\"\\";'
+
 
 class _BrowserAPI:
     """Browser automation via Chrome DevTools Protocol."""
@@ -458,7 +461,7 @@ class _BrowserAPI:
             if (!el) return "not found";
             el.focus();
             el.dispatchEvent(new Event('focus', {{bubbles:true}}));
-            {f'el.value = "";' if clear else ''}
+            {'el.value = "";' if clear else ''}
             const nativeSetter = Object.getOwnPropertyDescriptor(
                 window.HTMLInputElement.prototype, 'value'
             )?.set || Object.getOwnPropertyDescriptor(
@@ -590,7 +593,7 @@ class _BrowserAPI:
 
             best.focus();
             best.dispatchEvent(new Event('focus', {{bubbles:true}}));
-            {'"best.value = \\"\\";' if clear else ''}
+            {_clear_value_js() if clear else ''}
             const nativeSetter = Object.getOwnPropertyDescriptor(
                 window.HTMLInputElement.prototype, 'value'
             )?.set || Object.getOwnPropertyDescriptor(

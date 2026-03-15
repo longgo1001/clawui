@@ -8,7 +8,7 @@ Supports exact substring and fuzzy matching for resilient text finding.
 import os
 import sys
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 logger = logging.getLogger("clawui.ocr_tool")
 

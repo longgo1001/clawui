@@ -38,7 +38,7 @@ def find_clickable(app_name=None, text=None):
         try:
             role = node.get_role_name() or ""
             name = node.get_name() or ""
-            
+
             if role in clickable_roles:
                 if text is None or text.lower() in name.lower():
                     try:
@@ -52,14 +52,14 @@ def find_clickable(app_name=None, text=None):
                                 "w": rect.width,
                                 "h": rect.height,
                             })
-                    except:
+                    except Exception:
                         pass
 
             for i in range(node.get_child_count()):
                 child = node.get_child_at_index(i)
                 if child:
                     search(child, depth + 1)
-        except:
+        except Exception:
             pass
 
     for i in range(desktop.get_child_count()):

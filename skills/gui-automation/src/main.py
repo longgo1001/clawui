@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Entry point for GUI automation agent."""
 
-import sys
 import argparse
 from clawui.agent import run_agent
 # Use unified perception layer

@@ -1,10 +1,8 @@
 """CDP (Chrome DevTools Protocol) backend for browser automation on Wayland."""
 
-import base64
 import json
 import os
 import subprocess
-import sys
 import time
 import socket
 import http.client
@@ -86,7 +84,7 @@ def inherit_gui_session_env():
                     if b'=' in item:
                         k, v = item.split(b'=', 1)
                         env[k.decode('utf-8', 'ignore')] = v.decode('utf-8', 'ignore')
-                
+
                 # Apply relevant variables
                 for key in ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', ' WAYLAND_SOCKET']:
                     if key in env and not os.environ.get(key):
@@ -97,7 +95,7 @@ def inherit_gui_session_env():
 
     # Also try to set DBUS_SESSION_BUS_ADDRESS from the session
     try:
-        dbus_addr = subprocess.run(['dbus-send', '--session', '--print-reply', '--dest=org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus.GetId'], capture_output=True, text=True, timeout=2)
+        subprocess.run(['dbus-send', '--session', '--print-reply', '--dest=org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus.GetId'], capture_output=True, text=True, timeout=2)
         # Not reliable, skip
     except Exception:
         pass
@@ -293,13 +291,13 @@ class CDPClient:
 
     def _ensure_ws(self, target_id: str = None) -> bool:
         """Ensure a persistent WebSocket connection to the target tab.
-        
+
         Reuses existing connection if target hasn't changed. Auto-reconnects on failure.
         """
         ws_url = self._get_ws_url(target_id)
         if not ws_url:
             return False
-        
+
         # Reuse if same target and connection alive
         if self._ws and self._ws_url == ws_url:
             try:
@@ -308,7 +306,7 @@ class CDPClient:
             except Exception:
                 self._ws = None
                 self._ws_url = None
-        
+
         # Close old connection if target changed
         if self._ws:
             try:
@@ -317,7 +315,7 @@ class CDPClient:
                 pass
             self._ws = None
             self._ws_url = None
-        
+
         # Open new persistent connection
         try:
             import websocket
@@ -374,7 +372,7 @@ class CDPClient:
             return None
         except ImportError:
             return self._send_via_websocat(ws_url, method, params)
-        except Exception as e:
+        except Exception:
             self._ws = None
             self._ws_url = None
             return None
@@ -419,7 +417,7 @@ class CDPClient:
 
     def scroll_page(self, x: int = 0, y: int = 0, delta_x: int = 0, delta_y: int = 0):
         """Scroll the page at (x, y) by (delta_x, delta_y) pixels.
-        
+
         delta_y negative = scroll up, positive = scroll down.
         delta_x negative = scroll left, positive = scroll right.
         """
@@ -518,7 +516,7 @@ class CDPClient:
 
     def get_interactive_elements(self, max_elements: int = 100) -> List[Dict]:
         """Extract all interactive elements from the page with text, selector, and bounding box.
-        
+
         Returns a list of dicts: {tag, type, text, selector, role, bbox: {x,y,width,height}, value}
         This is the web equivalent of AT-SPI's ui_tree for desktop apps.
         """
@@ -771,7 +769,7 @@ def _is_port_listening(port: int, host: str = "127.0.0.1") -> bool:
         result = sock.connect_ex((host, port))
         sock.close()
         return result == 0
-    except:
+    except Exception:
         return False
 
 

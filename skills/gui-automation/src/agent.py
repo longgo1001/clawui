@@ -11,15 +11,15 @@ from functools import wraps
 
 logger = logging.getLogger("clawui.agent")
 
-from .screenshot import take_screenshot, get_screen_size
+from .screenshot import take_screenshot
 from .atspi_helper import (
     list_applications, get_ui_tree_summary, find_elements,
-    do_action, set_text, get_focused_element,
+    do_action, set_text,
 )
 from .actions import (
     click, double_click, right_click, type_text, press_key,
     scroll, drag, focus_window, get_active_window,
-    clipboard_read, clipboard_write, clipboard_clear,
+    clipboard_read, clipboard_write,
 )
 
 
@@ -299,16 +299,16 @@ def _quick_screen_hash():
 
 def _with_retry(func=None, *, env_prefix="CLAWUI", category="RETRY"):
     """Decorator that adds configurable retry logic to tool functions.
-    
+
     Reads max attempts and initial delay from env vars:
       {env_prefix}_{category}_MAX (default 3)
       {env_prefix}_{category}_DELAY (default 0.5 for general, 1.0 for CDP/Marionette/Vision)
-    
+
     The decorated function should raise on failure. On final failure,
     returns {"type": "text", "text": "..."} with error details.
     """
     default_delay = 1.0 if category in ("CDP_RETRY", "MARIONETTE_RETRY", "VISION_RETRY") else 0.5
-    
+
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
@@ -327,7 +327,7 @@ def _with_retry(func=None, *, env_prefix="CLAWUI", category="RETRY"):
                     else:
                         return {"type": "text", "text": f"{fn.__name__} failed after {max_attempts} attempts: {last_err}"}
         return wrapper
-    
+
     if func is not None:
         return decorator(func)
     return decorator
@@ -446,7 +446,7 @@ def _grounding_cascade(description, methods=None):
                 if result:
                     return (result[0], result[1], result[2], "vision")
 
-        except Exception as e:
+        except Exception:
             continue
 
     return None
@@ -756,7 +756,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         elif button == "right":
                             right_click(cx, cy)
                         else:
-                            click(cx, cy)
+                            click(cx, cy)  # noqa: F823
                         return {"type": "text", "text": f"Clicked '{el.name}' ({el.role}) at ({cx}, {cy}) [{button}]"}
                     if attempt < max_attempts - 1:
                         time.sleep(delay)
@@ -854,7 +854,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 click(cx, cy)
                 press_key("ctrl+a")
                 type_text(input_data["text"])
-                return {"type": "text", "text": f"AT-SPI set_text failed, used click+type fallback"}
+                return {"type": "text", "text": "AT-SPI set_text failed, used click+type fallback"}
             return {"type": "text", "text": f"Set text on {elements[0]}"}
 
         elif name == "wait":
@@ -867,7 +867,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             windows_info = []
             try:
                 # Try X11 backend first if available
-                from .x11_helper import list_windows as x11_list_windows, X11Window
+                from .x11_helper import list_windows as x11_list_windows
                 if x11_list_windows():
                     for w in x11_list_windows():
                         windows_info.append({
@@ -1661,15 +1661,15 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                     return {"type": "text", "text": f"Template not found: {template_path}"}
                 with open(template_path, 'r', encoding='utf-8') as f:
                     template = json.load(f)
-                
+
                 elements = template.get('elements', {})
                 if element_name not in elements:
                     available = ', '.join(elements.keys())
                     return {"type": "text", "text": f"Element '{element_name}' not in template. Available: {available}"}
-                
+
                 rel_pos = elements[element_name]
                 rel_x, rel_y = rel_pos['x'], rel_pos['y']
-                
+
                 # Find target window
                 from .x11_helper import list_windows as x11_list_windows
                 windows = x11_list_windows()
@@ -1686,15 +1686,15 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                             break
                 if not target_win:
                     return {"type": "text", "text": f"Window for app '{app_name}' not found"}
-                
+
                 click_x = target_win.x + int(rel_x * target_win.width)
                 click_y = target_win.y + int(rel_y * target_win.height)
-                
+
                 offset_x = input_data.get("offset_x", 0)
                 offset_y = input_data.get("offset_y", 0)
                 click_x += offset_x
                 click_y += offset_y
-                
+
                 from .actions import click
                 click(click_x, click_y)
                 return {"type": "dict", "x": click_x, "y": click_y, "target_window": target_win.title, "text": f"Clicked {element_name} at ({click_x},{click_y})"}
@@ -1919,11 +1919,11 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             initial = _ocr_search()
             if initial:
                 best = sorted(initial, key=lambda m: m.get("score", 0), reverse=True)[0]
-                return {"type": "dict", "found": True, "center": best["center"], "text": best["text"], "score": best.get("score"), "scrolls": 0, "text": f"Found '{best['text']}' at {best['center']} (no scroll needed)"}
+                return {"type": "dict", "found": True, "center": best["center"], "matched_text": best["text"], "score": best.get("score"), "scrolls": 0, "text": f"Found '{best['text']}' at {best['center']} (no scroll needed)"}
             result = _scroll_and_find(_ocr_search, max_scrolls=max_scrolls, direction=direction)
             if result:
                 best = sorted(result, key=lambda m: m.get("score", 0), reverse=True)[0]
-                return {"type": "dict", "found": True, "center": best["center"], "text": best["text"], "score": best.get("score"), "text": f"Found '{best['text']}' at {best['center']} after scrolling"}
+                return {"type": "dict", "found": True, "center": best["center"], "matched_text": best["text"], "score": best.get("score"), "text": f"Found '{best['text']}' at {best['center']} after scrolling"}
             return {"type": "text", "text": f"scroll_to_find: '{search_text}' not found after {max_scrolls} scrolls {direction}"}
 
         # P4-D: Grounding cascade

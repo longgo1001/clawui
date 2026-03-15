@@ -51,6 +51,17 @@ filterwarnings = [
     "ignore:.*Atspi.*is deprecated:DeprecationWarning",
 ]
 
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",   # module-level import not at top (lazy imports are intentional)
+    "E501",   # line too long (formatting is handled separately)
+    "E741",   # ambiguous variable name
+]
+
 [tool.setuptools]
 packages = ["clawui"]
 

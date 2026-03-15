@@ -84,7 +84,8 @@ def double_click(x: int | None = None, y: int | None = None):
         _run("xdotool click --repeat 2 --delay 10 1")
     else:
         _run("ydotool click 1")
-        import time; time.sleep(0.05)
+        import time
+        time.sleep(0.05)
         _run("ydotool click 1")
 
 

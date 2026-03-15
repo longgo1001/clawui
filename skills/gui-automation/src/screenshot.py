@@ -8,7 +8,6 @@ import logging
 logger = logging.getLogger("clawui.screenshot")
 
 import base64
-import json
 import os
 import shutil
 import subprocess
@@ -160,13 +159,13 @@ def take_screenshot(
 ) -> str:
     """
     Take a screenshot and return base64-encoded PNG.
-    
+
     Args:
         region: Optional (x, y, width, height) to capture a specific area
         window_name: Optional app/window name to capture just that window
                      (uses AT-SPI to find geometry; fallback to full screen)
         scale: Whether to scale down large screenshots
-    
+
     Returns:
         Base64-encoded PNG string
     """

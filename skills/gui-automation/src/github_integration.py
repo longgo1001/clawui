@@ -208,7 +208,7 @@ def create_repo_via_cdp(client, repo_name: str, repo_desc: str = "") -> Tuple[bo
             return "not-found";
         })()
         '''
-        click_result = client.evaluate(click_js)
+        client.evaluate(click_js)
         time.sleep(3)
 
         # Verify success: URL should contain /<username>/<repo_name>

@@ -2,7 +2,6 @@
 
 import os
 import json
-import base64
 import time as _time
 import sys
 from abc import ABC, abstractmethod
@@ -42,12 +41,10 @@ def _with_api_retry(func=None, *, max_retries=None, initial_delay=None):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             delay = initial_delay
-            last_err = None
             for attempt in range(max_retries):
                 try:
                     return fn(*args, **kwargs)
                 except Exception as e:
-                    last_err = e
                     if not _is_retryable(e) or attempt >= max_retries - 1:
                         raise
                     print(f"[WARN] {fn.__qualname__}: {e} (attempt {attempt+1}/{max_retries}), "
@@ -67,7 +64,7 @@ class AIBackend(ABC):
     @abstractmethod
     def chat(self, messages: list, tools: list, system: str) -> dict:
         """Send messages and get response with tool calls.
-        
+
         Returns: {
             "text": str | None,
             "tool_calls": [{"id": str, "name": str, "input": dict}]

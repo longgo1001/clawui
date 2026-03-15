@@ -1,11 +1,7 @@
 """Vision backend for GUI automation using OpenAI-compatible API (Ollama, OpenAI, etc.)."""
 
-import base64
-import json
 import os
-import subprocess
-import time
-from typing import Optional, List, Dict, Any
+from typing import List, Dict, Any
 
 import httpx
 from .backends import AIBackend
@@ -79,7 +75,7 @@ class VisionBackend(AIBackend):
     def __del__(self):
         try:
             self.client.close()
-        except:
+        except Exception:
             pass
 
 

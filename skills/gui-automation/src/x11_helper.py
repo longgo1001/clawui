@@ -31,7 +31,7 @@ def _run_cmd(cmd: List[str]) -> str:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         return result.stdout.strip()
-    except Exception as e:
+    except Exception:
         return ""
 
 
@@ -49,7 +49,7 @@ def _get_window_class(wid: int) -> str:
         if match:
             # Return the second (human-readable) class, or first
             return match.group(2) or match.group(1)
-    except:
+    except Exception:
         pass
     return ""
 

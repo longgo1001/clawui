@@ -157,7 +157,7 @@ def find_elements(
 ) -> list[UIElement]:
     """
     Find UI elements matching criteria.
-    
+
     Args:
         root: Starting node (None = desktop)
         role: Filter by role (e.g., 'push button', 'text', 'menu item')

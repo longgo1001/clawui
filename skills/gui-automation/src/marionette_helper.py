@@ -10,7 +10,7 @@ import socket
 import subprocess
 import time
 import os
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Any
 
 
 class MarionetteClient:

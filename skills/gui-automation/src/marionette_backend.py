@@ -31,7 +31,7 @@ class MarionetteBackend:
             try:
                 # Perform a lightweight RPC to verify connection and session.
                 # Using get_title() is safe and cheap.
-                title = self.client.get_title()
+                self.client.get_title()
                 # Even an empty title indicates a working session.
                 return
             except Exception:
@@ -113,7 +113,7 @@ class MarionetteBackend:
             "ArrowLeft": "\ue012", "ArrowRight": "\ue014",
             "Backspace": "\ue003", "Delete": "\ue017",
         }
-        char = key_map.get(key, key)
+        key_map.get(key, key)
         # Send to active element
         self.client.execute_script(
             f"arguments[0].dispatchEvent(new KeyboardEvent('keydown', {{key: '{key}'}}));",

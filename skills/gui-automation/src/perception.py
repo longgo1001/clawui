@@ -1,10 +1,8 @@
 """Unified perception layer - auto-route between AT-SPI, X11, and CDP backends."""
 
 import json
-import sys
-import subprocess
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Optional
 
 logger = logging.getLogger("clawui.perception")
 
@@ -36,15 +34,11 @@ except Exception:
 try:
     from .x11_helper import (
         list_windows as x11_list_windows,
-        X11Window,
         get_ui_tree_summary as x11_tree,
         activate_window as x11_activate,
-        click_window as x11_click,
         click_at as x11_click_at,
         type_text as x11_type,
-        key_press as x11_key,
         find_windows_by_class as x11_find_by_class,
-        find_windows_by_title as x11_find_by_title,
         do_action as x11_do_action,
         set_text as x11_set_text,
         list_applications as x11_list_apps,
@@ -54,15 +48,11 @@ except Exception:
     try:
         from clawui.x11_helper import (
             list_windows as x11_list_windows,
-            X11Window,
             get_ui_tree_summary as x11_tree,
             activate_window as x11_activate,
-            click_window as x11_click,
             click_at as x11_click_at,
             type_text as x11_type,
-            key_press as x11_key,
             find_windows_by_class as x11_find_by_class,
-            find_windows_by_title as x11_find_by_title,
             do_action as x11_do_action,
             set_text as x11_set_text,
             list_applications as x11_list_apps,
@@ -121,7 +111,7 @@ def _get_cdp_client() -> Optional['CDPClient']:
         _cdp_client = CDPClient()
         CDP_AVAILABLE = _cdp_client.is_available()
         return _cdp_client if CDP_AVAILABLE else None
-    except:
+    except Exception:
         CDP_AVAILABLE = False
         return None
 
@@ -224,7 +214,7 @@ def _get_marionette_summary(mario: 'MarionetteClient') -> str:
 
 def _get_cdp_summary(cdp: 'CDPClient', detailed: bool = False) -> str:
     """Get a summary of browser state via CDP.
-    
+
     Args:
         cdp: CDPClient instance
         detailed: If True, include page DOM summary for active tab
@@ -233,7 +223,7 @@ def _get_cdp_summary(cdp: 'CDPClient', detailed: bool = False) -> str:
     pages = [t for t in tabs if t.get("type") == "page"]
     if not pages:
         return ""
-    
+
     lines = [f"Browser: {len(pages)} tab(s)"]
     for i, tab in enumerate(pages):
         marker = " *" if i == 0 else ""  # First tab is usually active
@@ -243,7 +233,7 @@ def _get_cdp_summary(cdp: 'CDPClient', detailed: bool = False) -> str:
         lines.append(f"  [{i+1}]{marker} {title}")
         lines.append(f"      url: {url}")
         lines.append(f"      id: {tid}")
-    
+
     if detailed and pages:
         # Get active tab's page structure (forms, links, buttons)
         try:
@@ -274,9 +264,9 @@ def _get_cdp_summary(cdp: 'CDPClient', detailed: bool = False) -> str:
                             vis = "✓" if el.get("visible") else "hidden"
                             name = el.get("name") or el.get("text", "")[:30]
                             lines.append(f"    <{el['tag']}> type={el.get('type','')} name=\"{name}\" [{vis}]")
-        except:
+        except Exception:
             pass
-    
+
     return "\n".join(lines)
 
 
@@ -287,7 +277,7 @@ def _has_x11_windows() -> bool:
     try:
         windows = x11_list_windows()
         return len(windows) > 0
-    except:
+    except Exception:
         return False
 
 
@@ -298,12 +288,12 @@ def list_applications() -> List[str]:
     if ATSPI_AVAILABLE:
         try:
             apps.extend(atspi_list_apps())
-        except:
+        except Exception:
             pass
     if X11_AVAILABLE:
         try:
             apps.extend(x11_list_apps())
-        except:
+        except Exception:
             pass
     # Add CDP browser info
     cdp = _get_cdp_client()
@@ -355,14 +345,14 @@ def get_ui_tree_summary(app_name: Optional[str] = None, max_depth: int = 5) -> s
             atspi_out = atspi_tree(app_name=None, max_depth=max_depth)
             if atspi_out.strip():
                 parts.append("=== AT-SPI (Wayland native) ===\n" + atspi_out)
-        except:
+        except Exception:
             pass
     if X11_AVAILABLE:
         try:
             x11_out = x11_tree(app_name=None, max_depth=max_depth)[0]
             if x11_out.strip():
                 parts.append("=== X11 (XWayland) ===\n" + x11_out)
-        except:
+        except Exception:
             pass
     # CDP: include browser tab list
     cdp = _get_cdp_client()
@@ -371,7 +361,7 @@ def get_ui_tree_summary(app_name: Optional[str] = None, max_depth: int = 5) -> s
             cdp_summary = _get_cdp_summary(cdp)
             if cdp_summary:
                 parts.append("=== CDP (Chromium) ===\n" + cdp_summary)
-        except:
+        except Exception:
             pass
     # Marionette: include Firefox info
     mario = _get_marionette_client()
@@ -380,7 +370,7 @@ def get_ui_tree_summary(app_name: Optional[str] = None, max_depth: int = 5) -> s
             mario_summary = _get_marionette_summary(mario)
             if mario_summary:
                 parts.append("=== Marionette (Firefox) ===\n" + mario_summary)
-        except:
+        except Exception:
             pass
 
     return "\n\n".join(parts) if parts else "No UI tree available"

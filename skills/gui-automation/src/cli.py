@@ -170,7 +170,7 @@ def _run_inspect(args) -> int:
 
 def _run_doctor(fix: bool = False) -> int:
     """Run environment diagnostics and report status of all backends.
-    
+
     With --fix, auto-install missing system packages and Python deps.
     """
     import shutil
@@ -379,7 +379,7 @@ def _run_doctor(fix: bool = False) -> int:
             for i, issue in enumerate(issues, 1):
                 print(f"  {i}. {issue}")
             if not fix:
-                print(f"\n💡 Tip: run 'clawui doctor --fix' to auto-install missing dependencies")
+                print("\n💡 Tip: run 'clawui doctor --fix' to auto-install missing dependencies")
         else:
             print("✅ All issues fixed! Run 'clawui doctor' again to verify.")
         return 0 if fixes_applied and remaining == 0 else 1
@@ -536,9 +536,9 @@ def _run_selftest(args) -> int:
             from .cdp_helper import get_or_create_cdp_client
             cdp_client = get_or_create_cdp_client()
             if cdp_client and cdp_client.is_available():
-                print(f"      Connected to CDP")
+                print("      Connected to CDP")
                 return True
-            print(f"      CDP not available (Chromium not running or auto-launch failed)")
+            print("      CDP not available (Chromium not running or auto-launch failed)")
             return False
 
         if _test("CDP connect/auto-launch", test_cdp_connect) and cdp_client:
@@ -589,7 +589,7 @@ def _run_selftest(args) -> int:
 
     if not getattr(args, 'keep', False):
         shutil.rmtree(tmpdir, ignore_errors=True)
-        print(f"🧹 Cleaned up temp files")
+        print("🧹 Cleaned up temp files")
     else:
         print(f"📁 Temp files kept at: {tmpdir}")
 

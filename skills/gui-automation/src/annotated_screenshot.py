@@ -8,7 +8,7 @@ The agent can then use click_by_index to click any labeled element.
 import base64
 import io
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from PIL import Image, ImageDraw, ImageFont
 
