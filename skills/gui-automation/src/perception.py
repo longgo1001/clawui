@@ -3,7 +3,10 @@
 import json
 import sys
 import subprocess
+import logging
 from typing import List, Tuple, Optional
+
+logger = logging.getLogger("clawui.perception")
 
 # Import backends
 # Support both relative and absolute imports
@@ -28,7 +31,7 @@ except Exception:
         ATSPI_AVAILABLE = True
     except Exception as e:
         ATSPI_AVAILABLE = False
-        print(f"[WARN] AT-SPI not available: {e}", file=sys.stderr)
+        logger.warning("AT-SPI not available: %s", e)
 
 try:
     from .x11_helper import (
@@ -67,7 +70,7 @@ except Exception:
         X11_AVAILABLE = True
     except Exception as e:
         X11_AVAILABLE = False
-        print(f"[WARN] X11 backend not available: {e}", file=sys.stderr)
+        logger.warning("X11 backend not available: %s", e)
 
 try:
     from .cdp_helper import CDPClient
@@ -81,7 +84,7 @@ except Exception:
     except Exception as e:
         CDP_AVAILABLE = False
         _cdp_client = None
-        print(f"[WARN] CDP not available: {e}", file=sys.stderr)
+        logger.warning("CDP not available: %s", e)
 
 # Marionette backend (Firefox)
 try:
@@ -100,7 +103,7 @@ except Exception:
     except Exception as e:
         MARIONETTE_AVAILABLE = False
         _marionette_client = None
-        print(f"[WARN] Marionette not available: {e}", file=sys.stderr)
+        logger.warning("Marionette not available: %s", e)
 
 
 def _get_cdp_client() -> Optional['CDPClient']:
@@ -290,6 +293,7 @@ def _has_x11_windows() -> bool:
 
 def list_applications() -> List[str]:
     """List all applications (merge AT-SPI, X11, and CDP browser tabs)."""
+    logger.debug("Listing applications from available backends")
     apps = []
     if ATSPI_AVAILABLE:
         try:
@@ -313,7 +317,9 @@ def list_applications() -> List[str]:
     if mario:
         apps.append("Firefox (Marionette)")
     # Deduplicate
-    return sorted(set(apps))
+    deduped = sorted(set(apps))
+    logger.debug("Discovered %d applications", len(deduped))
+    return deduped
 
 
 def get_ui_tree_summary(app_name: Optional[str] = None, max_depth: int = 5) -> str:
@@ -322,6 +328,7 @@ def get_ui_tree_summary(app_name: Optional[str] = None, max_depth: int = 5) -> s
     - If app is known XWayland (Firefox, Chromium...), use X11
     - If no app specified and both backends available, merge results
     """
+    logger.debug("Building UI tree summary app_name=%s max_depth=%s", app_name, max_depth)
     # Specific app request
     if app_name:
         # Chromium-based: prefer CDP
@@ -381,6 +388,7 @@ def get_ui_tree_summary(app_name: Optional[str] = None, max_depth: int = 5) -> s
 
 def find_elements(role=None, name=None, app_name=None) -> List:
     """Find elements by role/name. Select backend based on app_name."""
+    logger.debug("find_elements via perception role=%s name=%s app_name=%s", role, name, app_name)
     if app_name and _is_xwayland_app(app_name) and X11_AVAILABLE:
         # X11: match windows by class or title
         if role:

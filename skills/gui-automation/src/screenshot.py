@@ -10,6 +10,9 @@ import shutil
 import subprocess
 import asyncio
 import time
+import logging
+
+logger = logging.getLogger("clawui.screenshot")
 from pathlib import Path
 from uuid import uuid4
 

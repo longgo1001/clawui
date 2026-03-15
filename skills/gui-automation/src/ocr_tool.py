@@ -21,9 +21,11 @@ try:
     from rapidocr_onnxruntime import RapidOCR
     _ocr_engine = RapidOCR()
     _has_rapidocr = True
+    logger.info("RapidOCR engine initialized")
 except ImportError:
     _ocr_engine = None
     _has_rapidocr = False
+    logger.warning("RapidOCR not available, will use Tesseract fallback")
 
 def _decode_image_bytes(image_data: str) -> bytes:
     """Decode base64 image payload (supports optional data: URI prefix)."""
@@ -61,7 +63,7 @@ def ocr_extract_lines(image_data: str, threshold: float = 0.0) -> List[Dict[str,
                     })
             return lines
         except Exception as e:
-            print(f"[ocr_extract_lines] RapidOCR failed: {e}")
+            logger.warning("RapidOCR failed, falling back to Tesseract: %s", e)
 
     # Tesseract fallback
     try:
@@ -95,7 +97,7 @@ def ocr_extract_lines(image_data: str, threshold: float = 0.0) -> List[Dict[str,
             })
         return lines
     except Exception as e:
-        print(f"[ocr_extract_lines] Tesseract failed: {e}")
+        logger.error("Tesseract OCR failed: %s", e)
         return []
 
 
@@ -180,6 +182,7 @@ def ocr_find_text(
 
     Uses ocr_extract_lines internally — no duplicated OCR logic.
     """
+    logger.debug("Searching OCR text=%s threshold=%s fuzzy=%s", text, threshold, fuzzy)
     all_lines = ocr_extract_lines(image_data, threshold=threshold)
     matches = []
 
@@ -192,6 +195,7 @@ def ocr_find_text(
             if text.lower() in ocr_text.lower():
                 matches.append(line)
 
+    logger.debug("OCR matched %d lines for query=%s", len(matches), text)
     return matches
 
 

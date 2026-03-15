@@ -180,8 +180,10 @@ class CDPClient:
         """Check if CDP endpoint is reachable."""
         try:
             self._http_get("/json/version")
+            logger.debug("CDP endpoint reachable at %s:%s", self.host, self.port)
             return True
         except Exception:
+            logger.debug("CDP endpoint not reachable at %s:%s", self.host, self.port)
             return False
 
     def list_targets(self) -> List[Dict]:
@@ -321,6 +323,7 @@ class CDPClient:
             import websocket
             self._ws = websocket.create_connection(ws_url, timeout=10)
             self._ws_url = ws_url
+            logger.info("CDP WebSocket connection established")
             return True
         except ImportError:
             return False
