@@ -9,7 +9,7 @@ GitHub repo creation automation using one of three methods, in order of preferen
 import sys, os, subprocess, time, json, requests, pathlib
 
 sys.path.insert(0, '/home/hung/.openclaw/workspace/skills/gui-automation')
-from src.cdp_helper import CDPClient
+from clawui.cdp_helper import CDPClient
 
 # Config
 REPO_NAME = "clawui-test-repo-" + str(int(time.time()))

@@ -33,7 +33,7 @@ if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
 
 try:
-    from src.cdp_helper import CDPClient
+    from clawui.cdp_helper import CDPClient
 except ImportError:
     print("Error: Could not import CDPClient. Make sure the project path is correct.")
     sys.exit(1)

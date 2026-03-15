@@ -1,7 +1,7 @@
 """Tests for OCR fuzzy matching functionality."""
 
 import pytest
-from src.ocr_tool import _fuzzy_match, _levenshtein
+from clawui.ocr_tool import _fuzzy_match, _levenshtein
 
 
 class TestLevenshtein:
@@ -61,7 +61,7 @@ class TestOcrFindTextFuzzy:
 
     def test_fuzzy_param_accepted(self):
         """Ensure ocr_find_text accepts fuzzy parameter without error."""
-        from src.ocr_tool import ocr_find_text
+        from clawui.ocr_tool import ocr_find_text
         import base64
         # 1x1 white PNG
         tiny_png = base64.b64encode(

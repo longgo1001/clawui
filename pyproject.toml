@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clawui"
-version = "0.7.0"
+version = "0.8.0"
 description = "AI-driven desktop and browser automation for Linux"
 readme = "README.md"
 license = {text = "MIT"}
@@ -38,7 +38,7 @@ dev = [
 ]
 
 [project.scripts]
-clawui = "src.cli:main"
+clawui = "clawui.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/longgo1001/clawui"
@@ -51,7 +51,7 @@ filterwarnings = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["src*"]
+include = ["clawui*"]
 
 [tool.setuptools.package-data]
-src = ["py.typed"]
+clawui = ["py.typed"]

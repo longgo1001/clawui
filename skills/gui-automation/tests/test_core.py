@@ -30,13 +30,13 @@ def run_test(name, fn):
 
 # === Tool Registration ===
 def test_tool_count():
-    from src.agent import create_tools
+    from clawui.agent import create_tools
     tools = create_tools()
     assert len(tools) >= 45, f"Expected >=45 tools, got {len(tools)}"
 
 
 def test_no_duplicate_tools():
-    from src.agent import create_tools
+    from clawui.agent import create_tools
     tools = create_tools()
     names = [t["name"] for t in tools]
     dupes = [n for n in set(names) if names.count(n) > 1]
@@ -44,7 +44,7 @@ def test_no_duplicate_tools():
 
 
 def test_all_tools_have_schema():
-    from src.agent import create_tools
+    from clawui.agent import create_tools
     tools = create_tools()
     for t in tools:
         assert "name" in t, f"Tool missing name: {t}"
@@ -53,7 +53,7 @@ def test_all_tools_have_schema():
 
 
 def test_wait_for_element_registered():
-    from src.agent import create_tools
+    from clawui.agent import create_tools
     tools = create_tools()
     names = [t["name"] for t in tools]
     assert "wait_for_element" in names, "wait_for_element tool not registered"
@@ -62,20 +62,20 @@ def test_wait_for_element_registered():
 
 # === Backend Imports ===
 def test_atspi_import():
-    from src.atspi_helper import list_applications, get_ui_tree_summary, find_elements
+    from clawui.atspi_helper import list_applications, get_ui_tree_summary, find_elements
 
 
 def test_x11_import():
-    from src.x11_helper import list_windows
+    from clawui.x11_helper import list_windows
 
 
 def test_cdp_import():
-    from src.cdp_helper import CDPClient
+    from clawui.cdp_helper import CDPClient
 
 
 def test_cdp_scroll_and_hover_methods_exist():
     """CDPClient should have scroll_page, hover, and hover_selector methods."""
-    from src.cdp_helper import CDPClient
+    from clawui.cdp_helper import CDPClient
     c = CDPClient()
     assert hasattr(c, 'scroll_page'), "Missing scroll_page method"
     assert hasattr(c, 'hover'), "Missing hover method"
@@ -84,7 +84,7 @@ def test_cdp_scroll_and_hover_methods_exist():
 
 def test_cdp_scroll_hover_tools_registered():
     """cdp_scroll and cdp_hover should be in the tool list."""
-    from src.agent import create_tools
+    from clawui.agent import create_tools
     tools = create_tools()
     names = [t["name"] for t in tools]
     assert "cdp_scroll" in names, "cdp_scroll tool not registered"
@@ -93,7 +93,7 @@ def test_cdp_scroll_hover_tools_registered():
 
 def test_cdp_wait_for_selector_result_parsing():
     """wait_for_selector should correctly parse Runtime.evaluate nested result.value payload."""
-    from src.cdp_helper import CDPClient
+    from clawui.cdp_helper import CDPClient
     c = CDPClient()
     c.evaluate = lambda _expr: {"result": {"type": "object", "value": {"found": True, "text": "Submit", "tag": "BUTTON"}}}
     r = c.wait_for_selector("button", timeout=0.1, poll_interval=0.01)
@@ -103,7 +103,7 @@ def test_cdp_wait_for_selector_result_parsing():
 
 def test_cdp_wait_for_load_ready_state_nested_result():
     """CDPBackend.wait_for_load should handle nested Runtime.evaluate payloads."""
-    from src.cdp_backend import CDPBackend
+    from clawui.cdp_backend import CDPBackend
 
     backend = CDPBackend.__new__(CDPBackend)
     backend._ensure_connection = lambda: None
@@ -118,7 +118,7 @@ def test_cdp_wait_for_load_ready_state_nested_result():
 
 def test_cdp_wait_for_load_timeout_returns_false():
     """CDPBackend.wait_for_load should return False on timeout when page never completes."""
-    from src.cdp_backend import CDPBackend
+    from clawui.cdp_backend import CDPBackend
 
     backend = CDPBackend.__new__(CDPBackend)
     backend._ensure_connection = lambda: None
@@ -132,23 +132,23 @@ def test_cdp_wait_for_load_timeout_returns_false():
 
 
 def test_marionette_import():
-    from src.marionette_helper import MarionetteClient
+    from clawui.marionette_helper import MarionetteClient
 
 
 def test_perception_import():
-    from src.perception import list_applications, get_ui_tree_summary
+    from clawui.perception import list_applications, get_ui_tree_summary
 
 
 def test_ocr_import():
-    from src.ocr_tool import ocr_find_text
+    from clawui.ocr_tool import ocr_find_text
 
 
 def test_recorder_import():
-    from src.recorder import Recorder, Player
+    from clawui.recorder import Recorder, Player
 
 
 def test_export_recording_to_script():
-    from src.recorder import export_to_script
+    from clawui.recorder import export_to_script
 
     with tempfile.TemporaryDirectory() as td:
         recording_path = os.path.join(td, "demo.json")
@@ -172,7 +172,7 @@ def test_export_recording_to_script():
 def test_atspi_list_apps():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.atspi_helper import list_applications
+    from clawui.atspi_helper import list_applications
     apps = list_applications()
     # Should find at least something in a desktop session
     assert isinstance(apps, (list, str)), f"Unexpected type: {type(apps)}"
@@ -181,7 +181,7 @@ def test_atspi_list_apps():
 def test_atspi_ui_tree():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.atspi_helper import get_ui_tree_summary
+    from clawui.atspi_helper import get_ui_tree_summary
     tree = get_ui_tree_summary(max_depth=2)
     assert tree is not None, "UI tree returned None"
 
@@ -191,7 +191,7 @@ def test_atspi_ui_tree():
 def test_x11_list_windows():
     if not os.environ.get("DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.x11_helper import list_windows
+    from clawui.x11_helper import list_windows
     windows = list_windows()
     assert isinstance(windows, list), f"Expected list, got {type(windows)}"
 
@@ -201,7 +201,7 @@ def test_x11_list_windows():
 def test_screenshot():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.screenshot import take_screenshot
+    from clawui.screenshot import take_screenshot
     img = take_screenshot()
     assert img and len(img) > 100, "Screenshot too small or empty"
 
@@ -209,7 +209,7 @@ def test_screenshot():
 def test_screen_size():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.screenshot import get_screen_size
+    from clawui.screenshot import get_screen_size
     w, h = get_screen_size()
     assert w > 0 and h > 0, f"Invalid screen size: {w}x{h}"
 
@@ -219,7 +219,7 @@ def test_screen_size():
 def test_execute_ui_tree():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.agent import execute_tool
+    from clawui.agent import execute_tool
     result = execute_tool("ui_tree", {})
     assert "type" in result, f"Missing 'type' in result: {result}"
 
@@ -227,7 +227,7 @@ def test_execute_ui_tree():
 def test_execute_list_windows():
     if not os.environ.get("DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.agent import execute_tool
+    from clawui.agent import execute_tool
     result = execute_tool("list_windows", {})
     assert "type" in result, f"Missing 'type' in result: {result}"
 
@@ -235,7 +235,7 @@ def test_execute_list_windows():
 def test_execute_find_element_no_match():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.agent import execute_tool
+    from clawui.agent import execute_tool
     result = execute_tool("find_element", {"name": "__nonexistent_element_12345__"})
     assert "type" in result, f"Missing 'type' in result"
 
@@ -244,7 +244,7 @@ def test_execute_wait_for_element_timeout():
     """wait_for_element should timeout quickly for nonexistent element."""
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.agent import execute_tool
+    from clawui.agent import execute_tool
     start = time.time()
     result = execute_tool("wait_for_element", {"name_contains": "__nonexistent__", "timeout": 2})
     elapsed = time.time() - start
@@ -257,7 +257,7 @@ def test_execute_wait_for_element_timeout():
 def test_perception_routing():
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.perception import list_applications
+    from clawui.perception import list_applications
     apps = list_applications()
     assert apps is not None, "Perception list_applications returned None"
 
@@ -269,7 +269,7 @@ def test_marionette_smoke():
     # Only run if DISPLAY is available (requires GUI session)
     if not os.environ.get("DISPLAY"):
         import pytest; pytest.skip("No display")
-    from src.marionette_helper import get_or_create_marionette_client
+    from clawui.marionette_helper import get_or_create_marionette_client
     client = get_or_create_marionette_client()
     if not client or not client.is_available():
         import pytest; pytest.skip("No display")  # Firefox not running with --marionette
@@ -318,8 +318,8 @@ def test_run_wait_text_success(monkeypatch):
         calls["n"] += 1
         return [{"text": "Ready", "center": [10, 20], "score": 0.99}] if calls["n"] == 1 else []
 
-    import src.screenshot as screenshot
-    import src.ocr_tool as ocr_tool
+    import clawui.screenshot as screenshot
+    import clawui.ocr_tool as ocr_tool
     monkeypatch.setattr(screenshot, "take_screenshot", fake_take_screenshot)
     monkeypatch.setattr(ocr_tool, "ocr_find_text", fake_ocr)
 

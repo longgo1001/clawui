@@ -25,9 +25,9 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'skills', 'gui-automation'))
 
-from src.screenshot import take_screenshot, get_screen_size
-from src.actions import click, type_text, press_key, scroll, focus_window
-from src.atspi_helper import list_applications, get_ui_tree_summary
+from clawui.screenshot import take_screenshot, get_screen_size
+from clawui.actions import click, type_text, press_key, scroll, focus_window
+from clawui.atspi_helper import list_applications, get_ui_tree_summary
 
 
 def resize_screenshot(b64_data: str, max_width: int = 800) -> str:

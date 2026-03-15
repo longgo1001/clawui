@@ -6,7 +6,7 @@ This demonstrates the plan_and_execute concept without needing an LLM.
 
 import sys, os, time
 sys.path.insert(0, 'ClawUI/skills/gui-automation')
-from src.agent import execute_tool
+from clawui.agent import execute_tool
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")

@@ -11,9 +11,9 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ClawUI/skills/gui-automation'))
 
-from src.perception import list_applications, find_elements, get_ui_tree_summary
-from src.x11_helper import list_windows, find_windows_by_title, activate_window, click_at
-from src.actions import type_text, press_key
+from clawui.perception import list_applications, find_elements, get_ui_tree_summary
+from clawui.x11_helper import list_windows, find_windows_by_title, activate_window, click_at
+from clawui.actions import type_text, press_key
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")

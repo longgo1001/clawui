@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from src.cdp_helper import launch_chromium_with_cdp, CDPClient
+from clawui.cdp_helper import launch_chromium_with_cdp, CDPClient
 
 
 def _has_display() -> bool:

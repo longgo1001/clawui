@@ -44,13 +44,13 @@ def test_api_module_docstring():
 
 def test_browser_api_singleton():
     """browser should be a singleton _BrowserAPI instance."""
-    from src.api import browser, _BrowserAPI
+    from clawui.api import browser, _BrowserAPI
     assert isinstance(browser, _BrowserAPI)
 
 
 def test_apps_returns_list():
     """apps() should return a list of strings."""
-    from src.api import apps
+    from clawui.api import apps
     result = apps()
     assert isinstance(result, list)
     # On a desktop with AT-SPI, should have at least one app
@@ -59,36 +59,36 @@ def test_apps_returns_list():
 
 def test_tree_returns_string():
     """tree() should return a string."""
-    from src.api import tree
+    from clawui.api import tree
     result = tree()
     assert isinstance(result, str)
 
 
 def test_click_requires_args():
     """click() without text or coords should raise ValueError."""
-    from src.api import click
+    from clawui.api import click
     with pytest.raises(ValueError, match="Provide either"):
         click()
 
 
 def test_double_click_requires_args():
     """double_click() without text or coords should raise ValueError."""
-    from src.api import double_click
+    from clawui.api import double_click
     with pytest.raises(ValueError, match="Provide either"):
         double_click()
 
 
 def test_annotate_import():
     """annotate() and click_index() should be importable from the API."""
-    from src.api import annotate, click_index
+    from clawui.api import annotate, click_index
     assert callable(annotate)
     assert callable(click_index)
 
 
 def test_click_index_no_annotation():
     """click_index() should raise RuntimeError if no annotation taken."""
-    from src.api import click_index
-    from src.annotated_screenshot import _last_elements
+    from clawui.api import click_index
+    from clawui.annotated_screenshot import _last_elements
     # Clear any cached elements
     _last_elements.clear()
     with pytest.raises(RuntimeError, match="No annotated screenshot"):
@@ -97,7 +97,7 @@ def test_click_index_no_annotation():
 
 def test_annotated_screenshot_dedup():
     """Deduplication should remove overlapping elements."""
-    from src.annotated_screenshot import _dedup_elements
+    from clawui.annotated_screenshot import _dedup_elements
     elements = [
         {"x": 100, "y": 100, "width": 50, "height": 30, "role": "button", "name": "A"},
         {"x": 102, "y": 101, "width": 50, "height": 30, "role": "button", "name": "A"},  # duplicate

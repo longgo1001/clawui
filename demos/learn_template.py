@@ -11,8 +11,8 @@ import json
 import time
 
 sys.path.insert(0, 'ClawUI/skills/gui-automation')
-from src.agent import execute_tool
-from src.x11_helper import list_windows, X11Window
+from clawui.agent import execute_tool
+from clawui.x11_helper import list_windows, X11Window
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")

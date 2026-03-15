@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test suite for vision_find_element tool."""
 
-from src.agent import create_tools, execute_tool
+from clawui.agent import create_tools, execute_tool
 
 
 def test_vision_tool_registered():

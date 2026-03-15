@@ -9,7 +9,7 @@ import subprocess
 # Ensure we use the workspace version
 sys.path.insert(0, '/home/hung/.openclaw/workspace/ClawUI/skills/gui-automation')
 
-from src.agent import _get_cdp
+from clawui.agent import _get_cdp
 
 def kill_existing_chromium():
     """Kill any running Chromium with remote debugging to start fresh."""

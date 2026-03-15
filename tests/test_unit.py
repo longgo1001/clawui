@@ -24,14 +24,14 @@ class TestScreenshot(unittest.TestCase):
             returncode=0,
             stdout='1920x1080\n'
         )
-        from src.screenshot import get_screen_size
+        from clawui.screenshot import get_screen_size
         w, h = get_screen_size()
         assert w == 1920
         assert h == 1080
 
     def test_take_screenshot_no_display(self):
         """Without a display, take_screenshot should raise or return None."""
-        from src.screenshot import take_screenshot
+        from clawui.screenshot import take_screenshot
         try:
             result = take_screenshot()
             # If it returns, it should be a string or None
@@ -44,14 +44,14 @@ class TestCDPClient(unittest.TestCase):
     """Test CDP client without a real browser."""
 
     def test_cdp_client_init(self):
-        from src.cdp_helper import CDPClient
+        from clawui.cdp_helper import CDPClient
         client = CDPClient(port=19222)
         assert client.port == 19222
         assert not client.is_available()
 
     @patch('http.client.HTTPConnection')
     def test_get_targets(self, mock_conn_cls):
-        from src.cdp_helper import CDPClient
+        from clawui.cdp_helper import CDPClient
         client = CDPClient(port=9222)
 
         # Mock HTTP response
@@ -75,7 +75,7 @@ class TestActions(unittest.TestCase):
     @patch('subprocess.run')
     def test_click(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
-        from src.actions import click
+        from clawui.actions import click
         click(100, 200)
         mock_run.assert_called()
         # Verify xdotool was invoked (could be string or list command)
@@ -90,14 +90,14 @@ class TestActions(unittest.TestCase):
     @patch('subprocess.run')
     def test_type_text(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
-        from src.actions import type_text
+        from clawui.actions import type_text
         type_text("hello world")
         mock_run.assert_called()
 
     @patch('subprocess.run')
     def test_press_key(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0)
-        from src.actions import press_key
+        from clawui.actions import press_key
         press_key("Return")
         mock_run.assert_called()
 
@@ -111,7 +111,7 @@ class TestX11Helper(unittest.TestCase):
             returncode=0,
             stdout='0x01000001 0 hung-pc My Window\n0x01000002 0 hung-pc Another\n'
         )
-        from src.x11_helper import list_windows
+        from clawui.x11_helper import list_windows
         wins = list_windows()
         assert len(wins) >= 0  # May parse differently but shouldn't crash
 
@@ -120,7 +120,7 @@ class TestAgentTools(unittest.TestCase):
     """Test agent tool creation and execution."""
 
     def test_create_tools_returns_list(self):
-        from src.agent import create_tools
+        from clawui.agent import create_tools
         tools = create_tools()
         assert isinstance(tools, list)
         assert len(tools) > 30  # We have 40+ tools
@@ -132,7 +132,7 @@ class TestAgentTools(unittest.TestCase):
         assert 'click_text' in names
 
     def test_tool_schemas_valid(self):
-        from src.agent import create_tools
+        from clawui.agent import create_tools
         tools = create_tools()
         for tool in tools:
             assert 'name' in tool
@@ -147,7 +147,7 @@ class TestRecorder(unittest.TestCase):
     """Test recorder module."""
 
     def test_start_stop_recording(self):
-        from src.recorder import start_recording, stop_recording, record_action
+        from clawui.recorder import start_recording, stop_recording, record_action
         rec = start_recording()
         record_action("click", {"x": 10, "y": 20}, {"type": "text", "text": "ok"})
         data = stop_recording()
@@ -158,7 +158,7 @@ class TestOCRTool(unittest.TestCase):
     """Test OCR tool module."""
 
     def test_import(self):
-        from src.ocr_tool import ocr_find_text
+        from clawui.ocr_tool import ocr_find_text
         assert callable(ocr_find_text)
 
 
@@ -166,7 +166,7 @@ class TestPerception(unittest.TestCase):
     """Test perception routing layer."""
 
     def test_import_and_functions(self):
-        from src.perception import get_ui_tree_summary, list_applications
+        from clawui.perception import get_ui_tree_summary, list_applications
         assert callable(get_ui_tree_summary)
         assert callable(list_applications)
 
@@ -175,7 +175,7 @@ class TestCLI(unittest.TestCase):
     """Test CLI entry point."""
 
     def test_cli_import(self):
-        from src.cli import main
+        from clawui.cli import main
         assert callable(main)
 
 
@@ -187,12 +187,12 @@ class TestAnnotatedScreenshot(unittest.TestCase):
     """Test annotated screenshot module."""
 
     def test_import(self):
-        from src.annotated_screenshot import annotated_screenshot, get_last_elements, LabeledElement
+        from clawui.annotated_screenshot import annotated_screenshot, get_last_elements, LabeledElement
         assert callable(annotated_screenshot)
         assert callable(get_last_elements)
 
     def test_dedup_elements(self):
-        from src.annotated_screenshot import _dedup_elements
+        from clawui.annotated_screenshot import _dedup_elements
         elements = [
             {"x": 100, "y": 100, "width": 50, "height": 30, "role": "button", "name": "A"},
             {"x": 102, "y": 101, "width": 50, "height": 30, "role": "button", "name": "A dup"},
@@ -202,7 +202,7 @@ class TestAnnotatedScreenshot(unittest.TestCase):
         assert len(result) == 2, f"Expected 2, got {len(result)}"
 
     def test_labeled_element_to_dict(self):
-        from src.annotated_screenshot import LabeledElement
+        from clawui.annotated_screenshot import LabeledElement
         el = LabeledElement(
             index=1, label="1: Save", role="push button", name="Save",
             x=10, y=20, width=80, height=30, center_x=50, center_y=35,
@@ -217,10 +217,10 @@ class TestAnnotatedScreenshot(unittest.TestCase):
 class TestAutoVerification(unittest.TestCase):
     """Test auto action verification logic."""
 
-    @patch('src.agent.take_screenshot')
+    @patch('clawui.agent.take_screenshot')
     def test_unchanged_screen_adds_warning(self, mock_ss):
         """When screen hash unchanged after action, result should contain warning."""
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         mock_ss.return_value = "AAAA"  # same base64 both times
         agent_mod._last_screen_hash = hashlib.md5(b"AAAA").hexdigest()
         with patch.object(agent_mod, '_execute_tool_inner',
@@ -229,10 +229,10 @@ class TestAutoVerification(unittest.TestCase):
                 result = agent_mod.execute_tool("click", {"x": 100, "y": 200})
         assert "unchanged" in result.get("text", "").lower()
 
-    @patch('src.agent.take_screenshot')
+    @patch('clawui.agent.take_screenshot')
     def test_changed_screen_no_warning(self, mock_ss):
         """When screen changes after action, no warning appended."""
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         mock_ss.return_value = "BBBB"  # different from stored
         agent_mod._last_screen_hash = hashlib.md5(b"AAAA").hexdigest()
         with patch.object(agent_mod, '_execute_tool_inner',
@@ -241,10 +241,10 @@ class TestAutoVerification(unittest.TestCase):
                 result = agent_mod.execute_tool("click", {"x": 100, "y": 200})
         assert "unchanged" not in result.get("text", "").lower()
 
-    @patch('src.agent.take_screenshot')
+    @patch('clawui.agent.take_screenshot')
     def test_verification_disabled(self, mock_ss):
         """When CLAWUI_VERIFY_ACTIONS=0, no verification occurs."""
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         mock_ss.return_value = "AAAA"
         agent_mod._last_screen_hash = hashlib.md5(b"AAAA").hexdigest()
         with patch.object(agent_mod, '_execute_tool_inner',
@@ -256,7 +256,7 @@ class TestAutoVerification(unittest.TestCase):
 
     def test_non_action_tool_skips_verification(self):
         """Non-state-changing tools should not trigger verification."""
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         with patch.object(agent_mod, '_execute_tool_inner',
                           return_value={"type": "text", "text": "tree data"}):
             result = agent_mod.execute_tool("ui_tree", {})
@@ -269,7 +269,7 @@ class TestHybridTools(unittest.TestCase):
     @patch('subprocess.run')
     def test_run_command(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="hello\n", stderr="")
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None  # disable verification
         result = agent_mod.execute_tool("run_command", {"command": "echo hello"})
         assert "hello" in result["text"]
@@ -278,14 +278,14 @@ class TestHybridTools(unittest.TestCase):
     @patch('subprocess.run')
     def test_run_command_timeout(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 30)
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None
         result = agent_mod.execute_tool("run_command", {"command": "sleep 999"})
         assert "timed out" in result["text"].lower()
 
     @patch('subprocess.run')
     def test_run_command_disabled(self, mock_run):
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None
         with patch.dict(os.environ, {"CLAWUI_ALLOW_SHELL": "0"}):
             result = agent_mod.execute_tool("run_command", {"command": "echo hello"})
@@ -293,13 +293,13 @@ class TestHybridTools(unittest.TestCase):
         mock_run.assert_not_called()
 
     def test_file_read_not_found(self):
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None
         result = agent_mod.execute_tool("file_read", {"path": "/nonexistent/file.txt"})
         assert "not found" in result["text"].lower()
 
     def test_file_write_and_read(self):
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             path = f.name
@@ -312,13 +312,13 @@ class TestHybridTools(unittest.TestCase):
             os.unlink(path)
 
     def test_file_list_not_found(self):
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None
         result = agent_mod.execute_tool("file_list", {"path": "/nonexistent/dir"})
         assert "not found" in result["text"].lower()
 
     def test_file_list_works(self):
-        import src.agent as agent_mod
+        import clawui.agent as agent_mod
         agent_mod._last_screen_hash = None
         with tempfile.TemporaryDirectory() as td:
             open(os.path.join(td, "a.txt"), "w").close()
@@ -328,7 +328,7 @@ class TestHybridTools(unittest.TestCase):
             assert "b.py" in result["text"]
 
     def test_create_tools_includes_new_tools(self):
-        from src.agent import create_tools
+        from clawui.agent import create_tools
         names = [t["name"] for t in create_tools()]
         for tool in ("run_command", "file_read", "file_write", "file_list", "open_url"):
             assert tool in names, f"{tool} missing from tools"
@@ -338,7 +338,7 @@ class TestPublicAPI(unittest.TestCase):
     """Tests for public Python API reliability behaviors."""
 
     def test_browser_click_text_searches_broad_elements(self):
-        from src.api import _BrowserAPI
+        from clawui.api import _BrowserAPI
 
         helper = MagicMock()
         helper.evaluate.return_value = {"result": {"value": "clicked"}}
@@ -353,7 +353,7 @@ class TestPublicAPI(unittest.TestCase):
         assert "toLowerCase().includes" in js
 
     def test_browser_type_into_dispatches_framework_events(self):
-        from src.api import _BrowserAPI
+        from clawui.api import _BrowserAPI
 
         helper = MagicMock()
         helper.evaluate.return_value = {"result": {"value": "ok"}}
@@ -372,16 +372,16 @@ class TestCLI(unittest.TestCase):
     """Tests for CLI module."""
 
     def test_cli_version(self):
-        from src.cli import VERSION
-        assert VERSION == "0.7.0"
+        from clawui.cli import VERSION
+        assert VERSION == "0.8.0"
 
     def test_run_inspect_function_exists(self):
-        from src.cli import _run_inspect
+        from clawui.cli import _run_inspect
         assert callable(_run_inspect)
 
     def test_inspect_with_mock_args(self):
         """Test inspect function signature accepts expected args."""
-        from src.cli import _run_inspect
+        from clawui.cli import _run_inspect
         import inspect
         sig = inspect.signature(_run_inspect)
         assert len(sig.parameters) == 1  # takes one 'args' param

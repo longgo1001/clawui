@@ -3,10 +3,10 @@
 
 import sys
 import argparse
-from src.agent import run_agent
+from clawui.agent import run_agent
 # Use unified perception layer
-from src.perception import list_applications, get_ui_tree_summary
-from src.screenshot import take_screenshot
+from clawui.perception import list_applications, get_ui_tree_summary
+from clawui.screenshot import take_screenshot
 
 
 def main():

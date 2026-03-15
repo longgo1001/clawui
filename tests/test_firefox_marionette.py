@@ -8,7 +8,7 @@ import os
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 log = logging.info
 
-from src.marionette_helper import get_or_create_marionette_client
+from clawui.marionette_helper import get_or_create_marionette_client
 
 
 def wait_for_page_load(client, timeout=10):

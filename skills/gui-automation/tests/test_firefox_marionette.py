@@ -11,7 +11,7 @@ log = logging.info
 
 # Setup paths
 sys.path.insert(0, '/home/hung/.openclaw/workspace/ClawUI/skills/gui-automation')
-from src.marionette_helper import get_or_create_marionette_client
+from clawui.marionette_helper import get_or_create_marionette_client
 
 
 def wait_for_page_load(client, timeout=10):

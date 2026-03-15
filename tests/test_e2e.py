@@ -20,7 +20,7 @@ def _has_display():
 @pytest.mark.skipif(not _has_display(), reason="No display server")
 def test_atspi():
     log("=== AT-SPI Test ===")
-    from src.atspi_helper import list_applications
+    from clawui.atspi_helper import list_applications
     apps = list_applications()
     log(f"Detected {len(apps)} apps")
     assert len(apps) > 5, f"Expected >5 AT-SPI apps, got {len(apps)}"
@@ -29,7 +29,7 @@ def test_atspi():
 @pytest.mark.skipif(not _has_display(), reason="No display server")
 def test_x11():
     log("=== X11 Test ===")
-    from src.x11_helper import list_windows
+    from clawui.x11_helper import list_windows
     wins = list_windows()
     named = [w for w in wins if w.title]
     log(f"X11 windows: {len(wins)} total, {len(named)} named")
@@ -39,7 +39,7 @@ def test_x11():
 @pytest.mark.skipif(not _has_display(), reason="No display server")
 def test_cdp():
     log("=== CDP Test ===")
-    from src.cdp_helper import get_or_create_cdp_client
+    from clawui.cdp_helper import get_or_create_cdp_client
     client = get_or_create_cdp_client()
     if not client:
         pytest.skip("CDP client unavailable")
@@ -55,7 +55,7 @@ def test_cdp():
 @pytest.mark.skipif(not _has_display(), reason="No display server")
 def test_marionette():
     log("=== Marionette Test ===")
-    from src.marionette_helper import get_or_create_marionette_client
+    from clawui.marionette_helper import get_or_create_marionette_client
 
     client = get_or_create_marionette_client()
     if not client:

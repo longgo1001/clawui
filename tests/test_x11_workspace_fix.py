@@ -4,7 +4,7 @@
 
 def test_x11_window_detection():
     """Test that X11 window detection works without errors."""
-    from src.x11_helper import list_windows, X11Window
+    from clawui.x11_helper import list_windows, X11Window
 
     print("Testing X11 window detection...")
     windows = list_windows()
@@ -36,7 +36,7 @@ def test_x11_window_detection():
 
 def test_perception_layer():
     """Test that perception layer correctly routes to X11."""
-    from src.perception import list_applications, get_ui_tree_summary, _is_xwayland_app
+    from clawui.perception import list_applications, get_ui_tree_summary, _is_xwayland_app
 
     print("\nTesting perception layer...")
 

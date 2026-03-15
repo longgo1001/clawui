@@ -95,7 +95,7 @@ More runnable examples are in [`examples/`](examples/): desktop basics, browser 
 ### AI Agent
 
 ```python
-from src.agent import run_agent
+from clawui.agent import run_agent
 
 # Natural language GUI automation
 run_agent("Open Calculator and compute 42 * 17")

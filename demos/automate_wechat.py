@@ -12,9 +12,9 @@ import subprocess
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ClawUI/skills/gui-automation'))
 
-from src.agent import execute_tool
-from src.perception import find_elements, get_ui_tree_summary
-from src.actions import click, type_text, press_key
+from clawui.agent import execute_tool
+from clawui.perception import find_elements, get_ui_tree_summary
+from clawui.actions import click, type_text, press_key
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")

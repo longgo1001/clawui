@@ -12,9 +12,9 @@ import base64
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'ClawUI/skills/gui-automation'))
 
-from src.perception import get_ui_tree_summary, find_elements
-from src.agent import execute_tool
-from src.screenshot import take_screenshot
+from clawui.perception import get_ui_tree_summary, find_elements
+from clawui.agent import execute_tool
+from clawui.screenshot import take_screenshot
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")

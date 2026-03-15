@@ -80,7 +80,7 @@ def method_cdp_fallback():
     try:
         # Use the proper import path for the CDP client from the skill
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'skills/gui-automation'))
-        from src.cdp_helper import get_or_create_cdp_client
+        from clawui.cdp_helper import get_or_create_cdp_client
     except ImportError as e:
         return False, f"CDP import failed: {e}"
 
@@ -108,7 +108,7 @@ def method_cdp_fallback():
         try:
             # Reuse the skill's vision backend if available
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'skills/gui-automation'))
-            from src.vision_backend import VisionBackend
+            from clawui.vision_backend import VisionBackend
             vb = VisionBackend()
             prompt = "List all open GitHub issues from this screenshot. For each issue, output exactly: '#<number>: <title>' on its own line. If none, say 'No open issues.'"
             messages = [

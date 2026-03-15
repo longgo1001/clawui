@@ -195,7 +195,7 @@ def ocr_find_text(
 # Standalone test
 if __name__ == "__main__":
     # Take a screenshot and search for text
-    from src.screenshot import take_screenshot
+    from clawui.screenshot import take_screenshot
     img = take_screenshot()
     if img:
         import base64

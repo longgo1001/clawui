@@ -5,7 +5,7 @@ import os
 import time
 import subprocess
 
-from src.cdp_helper import launch_chromium_with_cdp, DEFAULT_USER_DATA_DIR, get_or_create_cdp_client
+from clawui.cdp_helper import launch_chromium_with_cdp, DEFAULT_USER_DATA_DIR, get_or_create_cdp_client
 
 
 def test_profile_dir_exists():

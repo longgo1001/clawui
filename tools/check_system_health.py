@@ -62,7 +62,7 @@ def check_x11():
         checks.append(fail("python-xlib not installed"))
 
     try:
-        from src.x11_helper import list_windows
+        from clawui.x11_helper import list_windows
         windows = list_windows()
         if windows is not None:
             checks.append(ok(f"X11 window enumeration works ({len(windows)} windows)"))
@@ -76,7 +76,7 @@ def check_x11():
 def check_cdp():
     """Check CDP backend without auto-launching (safe for cron)."""
     try:
-        from src.cdp_helper import CDPClient
+        from clawui.cdp_helper import CDPClient
         client = CDPClient()
         # Quick HTTP GET to /json/version with short timeout
         try:
@@ -99,7 +99,7 @@ def check_cdp():
 def check_marionette():
     """Check Marionette backend without auto-launching (safe for cron)."""
     try:
-        from src.marionette_helper import MarionetteClient
+        from clawui.marionette_helper import MarionetteClient
         client = MarionetteClient()
         # Simple socket connect with short timeout
         try:
@@ -121,7 +121,7 @@ def check_marionette():
 def check_vision():
     """Check vision backend (Ollama/OpenAI)."""
     try:
-        from src.vision_backend import VisionBackend
+        from clawui.vision_backend import VisionBackend
         # Check Ollama endpoint
         try:
             import httpx

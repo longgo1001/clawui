@@ -18,7 +18,7 @@ try:
     ATSPI_AVAILABLE = True
 except Exception:
     try:
-        from src.atspi_helper import (
+        from clawui.atspi_helper import (
             list_applications as atspi_list_apps,
             get_ui_tree_summary as atspi_tree,
             find_elements as atspi_find,
@@ -49,7 +49,7 @@ try:
     X11_AVAILABLE = True
 except Exception:
     try:
-        from src.x11_helper import (
+        from clawui.x11_helper import (
             list_windows as x11_list_windows,
             X11Window,
             get_ui_tree_summary as x11_tree,
@@ -75,7 +75,7 @@ try:
     CDP_AVAILABLE = _cdp_client.is_available()
 except Exception:
     try:
-        from src.cdp_helper import CDPClient
+        from clawui.cdp_helper import CDPClient
         _cdp_client = CDPClient()
         CDP_AVAILABLE = _cdp_client.is_available()
     except Exception as e:
@@ -92,7 +92,7 @@ try:
         _marionette_client.close()
 except Exception:
     try:
-        from src.marionette_helper import MarionetteClient
+        from clawui.marionette_helper import MarionetteClient
         _marionette_client = MarionetteClient()
         MARIONETTE_AVAILABLE = _marionette_client._connect()
         if MARIONETTE_AVAILABLE:
@@ -114,7 +114,7 @@ def _get_cdp_client() -> Optional['CDPClient']:
         try:
             from .cdp_helper import CDPClient
         except ImportError:
-            from src.cdp_helper import CDPClient
+            from clawui.cdp_helper import CDPClient
         _cdp_client = CDPClient()
         CDP_AVAILABLE = _cdp_client.is_available()
         return _cdp_client if CDP_AVAILABLE else None
@@ -145,7 +145,7 @@ def _get_marionette_client() -> Optional['MarionetteClient']:
         try:
             from .marionette_helper import MarionetteClient
         except ImportError:
-            from src.marionette_helper import MarionetteClient
+            from clawui.marionette_helper import MarionetteClient
         _marionette_client = MarionetteClient()
         if _marionette_client._connect():
             _marionette_client.close()  # close test socket; client will reconnect on use
