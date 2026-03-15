@@ -16,6 +16,7 @@ from .atspi_helper import (
 from .actions import (
     click, double_click, right_click, type_text, press_key,
     scroll, drag, focus_window, get_active_window,
+    clipboard_read, clipboard_write, clipboard_clear,
 )
 
 
@@ -28,6 +29,260 @@ _VERIFY_ACTIONS = frozenset({
     "cdp_navigate", "cdp_click_at", "cdp_eval",
     "ff_click", "ff_type", "ff_navigate", "ff_eval", "launch_app",
 })
+
+
+# --- P3-A: Context window compression ---
+_CONTEXT_MAX_TOKENS = int(os.getenv("CLAWUI_CONTEXT_MAX_TOKENS", "80000"))
+_CONTEXT_COMPRESS_RATIO = 0.7
+_CONTEXT_KEEP_RECENT = 6
+
+# --- P3-B: Dynamic model routing ---
+_PLAN_MODEL = os.getenv("CLAWUI_PLAN_MODEL", "")
+_EXEC_MODEL = os.getenv("CLAWUI_EXEC_MODEL", "")
+_VERIFY_MODEL = os.getenv("CLAWUI_VERIFY_MODEL", "")
+
+# --- P3-C: Response caching ---
+_CACHE_TTL = float(os.getenv("CLAWUI_CACHE_TTL", "5"))
+_tool_cache = {}
+_CACHEABLE_TOOLS = frozenset({
+    "ui_tree", "find_element", "cdp_page_info", "cdp_get_elements",
+    "list_windows", "cdp_list_tabs", "ff_page_info", "ff_list_tabs",
+    "list_recordings", "file_list",
+})
+
+# --- P4-C: Scroll-to-find ---
+_SCROLL_FIND_MAX = int(os.getenv("CLAWUI_SCROLL_FIND_MAX", "5"))
+_SCROLL_FIND_PAUSE = float(os.getenv("CLAWUI_SCROLL_FIND_PAUSE", "0.3"))
+
+# --- P4-E: Command sandbox ---
+_COMMAND_BLOCKLIST_BUILTINS = [
+    r"\brm\s+(-\w*)?r\w*f",        # rm -rf, rm -fr, etc.
+    r"\bmkfs\b",                    # mkfs
+    r"\bdd\b\s+.*of=/dev/",        # dd writing to device
+    r"\bcurl\b.*\|\s*(ba)?sh",     # curl pipe to shell
+    r"\bwget\b.*\|\s*(ba)?sh",     # wget pipe to shell
+    r">\s*/dev/sd[a-z]",           # write to block device
+    r"\bchmod\b.*777\s+/",         # chmod 777 on root paths
+    r"\b:()\s*\{\s*:\|:\s*&\s*\}", # fork bomb
+    r"\bshutdown\b",
+    r"\breboot\b",
+    r"\binit\s+[06]\b",
+]
+_COMMAND_BLOCKLIST = _COMMAND_BLOCKLIST_BUILTINS[:]
+_extra_blocklist = os.getenv("CLAWUI_COMMAND_BLOCKLIST", "")
+if _extra_blocklist:
+    try:
+        _COMMAND_BLOCKLIST.extend(json.loads(_extra_blocklist))
+    except (json.JSONDecodeError, TypeError):
+        pass
+_WRITABLE_PATHS = [p.strip() for p in os.getenv("CLAWUI_WRITABLE_PATHS", os.path.expanduser("~") + ":/tmp").split(":") if p.strip()]
+_FIREJAIL_ENABLED = os.getenv("CLAWUI_FIREJAIL", "0") == "1"
+_command_audit_log = []
+
+
+def get_command_audit():
+    """Return the command audit log."""
+    return list(_command_audit_log)
+
+
+def _sandbox_check(command):
+    """Check if a command is allowed by the sandbox.
+
+    Returns (allowed: bool, reason: str).
+    """
+    import re
+    for pattern in _COMMAND_BLOCKLIST:
+        if re.search(pattern, command):
+            return False, f"Blocked by pattern: {pattern}"
+    return True, "ok"
+
+# --- P4-G: Proactive plan adaptation ---
+_REPLAN_INTERVAL = int(os.getenv("CLAWUI_REPLAN_INTERVAL", "3"))
+_REPLAN_ENABLED = os.getenv("CLAWUI_REPLAN_ENABLED", "1") == "1"
+
+# --- P4-F: Parallel perception tools ---
+_PARALLEL_TOOLS_ENABLED = os.getenv("CLAWUI_PARALLEL_TOOLS", "1") == "1"
+_PARALLEL_SAFE_TOOLS = frozenset(
+    _CACHEABLE_TOOLS | {
+        "screenshot", "find_text", "describe_screen", "find_element",
+        "cdp_screenshot", "ff_screenshot", "cdp_page_info", "ff_page_info",
+        "clipboard_read", "find_and_ground",
+    }
+)
+
+
+def _execute_tools_parallel(tool_uses):
+    """Execute multiple read-only tools concurrently.
+
+    Returns list of (tool_use, result) in the same order as input.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    results = [None] * len(tool_uses)
+
+    def _run_one(idx, tu):
+        return idx, execute_tool(tu.name, tu.input)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {pool.submit(_run_one, i, tu): i for i, tu in enumerate(tool_uses)}
+        for future in as_completed(futures):
+            idx, result = future.result()
+            results[idx] = result
+
+    return list(zip(tool_uses, results))
+
+# --- P3-F: Per-tool cost tracking ---
+_tool_token_stats = {}
+_phase_token_stats = {}
+
+
+def _estimate_tokens(messages):
+    """Estimate token count for a message list (~4 chars per token)."""
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            total += len(content) // 4
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    btype = block.get("type", "")
+                    if btype == "text":
+                        total += len(block.get("text", "")) // 4
+                    elif btype == "tool_result":
+                        inner = block.get("content", "")
+                        if isinstance(inner, str):
+                            total += len(inner) // 4
+                        elif isinstance(inner, list):
+                            for part in inner:
+                                if isinstance(part, dict) and part.get("type") == "text":
+                                    total += len(part.get("text", "")) // 4
+                                elif isinstance(part, dict) and part.get("type") == "image":
+                                    total += 1000  # image token estimate
+                    elif btype == "tool_use":
+                        total += len(json.dumps(block.get("input", {}))) // 4 + 20
+                elif isinstance(block, str):
+                    total += len(block) // 4
+        elif content is None:
+            # assistant messages with tool_calls may have content=None
+            tool_calls = msg.get("tool_calls", [])
+            for tc in tool_calls:
+                total += len(json.dumps(tc.get("input", {}))) // 4 + 20
+    return total
+
+
+def _compress_history(messages, keep_recent=None):
+    """Compress message history when estimated tokens exceed threshold.
+
+    Keeps the first message (task context) + a compressed summary of the
+    middle messages + the last ``keep_recent`` messages verbatim.
+    """
+    keep_recent = keep_recent or _CONTEXT_KEEP_RECENT
+    est = _estimate_tokens(messages)
+    threshold = int(_CONTEXT_MAX_TOKENS * _CONTEXT_COMPRESS_RATIO)
+    if est <= threshold or len(messages) <= keep_recent + 1:
+        return messages
+
+    first = messages[0]
+    recent = messages[-keep_recent:]
+    middle = messages[1:-keep_recent]
+
+    # Build a compact summary of the middle conversation
+    summary_parts = []
+    for msg in middle:
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            text = content[:120]
+        elif isinstance(content, list):
+            texts = []
+            for block in content:
+                if isinstance(block, dict):
+                    btype = block.get("type", "")
+                    if btype == "text":
+                        texts.append(block.get("text", "")[:60])
+                    elif btype == "tool_result":
+                        inner = block.get("content", "")
+                        if isinstance(inner, str):
+                            texts.append(f"[tool_result:{inner[:40]}]")
+                        else:
+                            texts.append("[tool_result:...]")
+                    elif btype == "tool_use":
+                        texts.append(f"[tool:{block.get('name','')}]")
+            text = " | ".join(texts)[:120]
+        else:
+            text = str(content)[:80] if content else ""
+        if text:
+            summary_parts.append(f"{role}: {text}")
+
+    summary_text = "[Context compressed] Prior conversation summary:\n" + "\n".join(summary_parts)
+
+    return [first, {"role": "user", "content": summary_text}] + recent
+
+
+# --- P3-C helpers ---
+def _cache_key(tool_name, input_data):
+    """Build a hashable cache key from tool name + sorted input."""
+    raw = json.dumps({"t": tool_name, "i": input_data}, sort_keys=True, ensure_ascii=False)
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _cache_get(key):
+    """Return cached result if within TTL, else None."""
+    entry = _tool_cache.get(key)
+    if entry is None:
+        return None
+    ts, result = entry
+    if (_time.time() - ts) > _CACHE_TTL:
+        _tool_cache.pop(key, None)
+        return None
+    return result
+
+
+def _cache_set(key, result):
+    """Store result in cache with current timestamp."""
+    _tool_cache[key] = (_time.time(), result)
+
+
+# --- P3-F helpers ---
+def _track_tokens(name, usage):
+    """Track token usage for a specific tool or API call."""
+    if not usage:
+        return
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    if name not in _tool_token_stats:
+        _tool_token_stats[name] = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+    _tool_token_stats[name]["input_tokens"] += inp
+    _tool_token_stats[name]["output_tokens"] += out
+    _tool_token_stats[name]["calls"] += 1
+
+
+def _track_phase(phase, usage):
+    """Track token usage for a named phase (e.g., run_agent, plan_and_execute)."""
+    if not usage:
+        return
+    inp = usage.get("input_tokens", 0)
+    out = usage.get("output_tokens", 0)
+    if phase not in _phase_token_stats:
+        _phase_token_stats[phase] = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+    _phase_token_stats[phase]["input_tokens"] += inp
+    _phase_token_stats[phase]["output_tokens"] += out
+    _phase_token_stats[phase]["calls"] += 1
+
+
+def get_token_stats():
+    """Return current per-tool and per-phase token statistics."""
+    return {
+        "tools": dict(_tool_token_stats),
+        "phases": dict(_phase_token_stats),
+    }
+
+
+def reset_token_stats():
+    """Reset all token tracking counters."""
+    _tool_token_stats.clear()
+    _phase_token_stats.clear()
 
 
 def _quick_screen_hash():
@@ -128,6 +383,92 @@ def _vision_find(description: str) -> tuple | None:
         print(f"[WARN] Vision fallback error: {e}")
     return None
 
+def _scroll_and_find(find_fn, max_scrolls=None, direction="down", pause=None):
+    """Scroll the viewport incrementally and re-run find_fn after each scroll.
+
+    Args:
+        find_fn: callable() -> result.  Should return a truthy value on success.
+        max_scrolls: number of scroll attempts (default from env).
+        direction: "down" or "up".
+        pause: seconds to wait after each scroll (default from env).
+
+    Returns the first truthy result from find_fn, or None.
+    """
+    max_scrolls = max_scrolls if max_scrolls is not None else _SCROLL_FIND_MAX
+    pause = pause if pause is not None else _SCROLL_FIND_PAUSE
+    for _ in range(max_scrolls):
+        scroll(direction=direction, amount=3)
+        _time.sleep(pause)
+        result = find_fn()
+        if result:
+            return result
+    return None
+
+
+def _grounding_cascade(description, methods=None):
+    """Try grounding methods in priority order, return first success.
+
+    Each method returns (x, y, confidence, method_name) or None.
+    Default order: atspi → ocr → vision (configurable via CLAWUI_GROUNDING_METHODS).
+    """
+    if methods is None:
+        env_methods = os.getenv("CLAWUI_GROUNDING_METHODS", "atspi,ocr,vision")
+        methods = [m.strip() for m in env_methods.split(",") if m.strip()]
+
+    for method in methods:
+        try:
+            if method == "atspi":
+                elements = find_elements(name=description)
+                if not elements:
+                    # Try partial match
+                    elements = find_elements()
+                    elements = [e for e in elements if description.lower() in str(e).lower()]
+                if elements:
+                    el = elements[0]
+                    cx, cy = el.center() if hasattr(el, 'center') and callable(el.center) else (el.x + el.width // 2, el.y + el.height // 2)
+                    return (cx, cy, 0.9, "atspi")
+
+            elif method == "ocr":
+                from .ocr_tool import ocr_find_text
+                img = take_screenshot()
+                if img:
+                    matches = ocr_find_text(img, description)
+                    if matches:
+                        matches.sort(key=lambda m: m.get("score", 0), reverse=True)
+                        best = matches[0]
+                        return (best["center"][0], best["center"][1], best.get("score", 0.7), "ocr")
+
+            elif method == "vision":
+                result = _vision_find(description)
+                if result:
+                    return (result[0], result[1], result[2], "vision")
+
+        except Exception as e:
+            print(f"[WARN] Grounding cascade ({method}): {e}", file=sys.stderr)
+            continue
+
+    return None
+
+
+def _check_plan_divergence(expected_tokens, current_tokens, threshold=0.5):
+    """Check if the current screen state has diverged from expectations.
+
+    Compares sets of text tokens from expected vs current OCR output.
+    Returns True if overlap is below threshold (i.e., environment changed significantly).
+    """
+    if not expected_tokens or not current_tokens:
+        return False
+    expected_set = set(t.lower().strip() for t in expected_tokens if t.strip())
+    current_set = set(t.lower().strip() for t in current_tokens if t.strip())
+    if not expected_set:
+        return False
+    overlap = len(expected_set & current_set) / len(expected_set)
+    # Also check for error-like tokens
+    error_tokens = {"error", "failed", "错误", "失败", "timeout", "超时", "exception", "crash"}
+    has_errors = bool(current_set & error_tokens)
+    return overlap < threshold or has_errors
+
+
 SYSTEM_PROMPT = """You are a GUI automation agent controlling a Linux desktop.
 
 You have two perception modes:
@@ -195,6 +536,15 @@ System/file tools (direct access, no GUI needed):
 - open_url: Open URL in default browser
 
 Be efficient. Prefer AT-SPI actions over coordinate clicks when available.
+Clipboard tools:
+- clipboard_read: Read text from system clipboard
+- clipboard_write: Write text to system clipboard
+- clipboard_copy_paste: Copy selected text (Ctrl+C), read clipboard, optionally paste
+
+Search tools:
+- scroll_to_find: Scroll viewport and search for text via OCR — finds off-screen elements
+- find_and_ground: Cascading grounding (AT-SPI → OCR → Vision) to locate any UI element
+
 Prefer system tools over GUI navigation for file and command-line operations."""
 
 
@@ -280,13 +630,33 @@ def create_tools():
         {"name": "file_write", "description": "Write content to a file. Creates parent directories if needed.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "File path to write"}, "content": {"type": "string", "description": "Content to write"}}, "required": ["path", "content"]}},
         {"name": "file_list", "description": "List directory contents with name, size, and type.", "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Directory path (default: home)"}, "pattern": {"type": "string", "description": "Glob pattern filter (e.g. '*.py')"}}}},
         {"name": "open_url", "description": "Open a URL in the default browser using xdg-open.", "input_schema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
+        # Clipboard tools (P4-B)
+        {"name": "clipboard_read", "description": "Read the current system clipboard text content.", "input_schema": {"type": "object", "properties": {}}},
+        {"name": "clipboard_write", "description": "Write text to the system clipboard.", "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}},
+        {"name": "clipboard_copy_paste", "description": "Copy selected text (Ctrl+C), read clipboard, optionally paste into another context. Returns clipboard content.", "input_schema": {"type": "object", "properties": {"paste": {"type": "boolean", "default": False, "description": "If true, also paste (Ctrl+V) after reading"}}}},
+        # Scroll-to-find (P4-C)
+        {"name": "scroll_to_find", "description": "Scroll the viewport incrementally and search for text via OCR after each scroll. Returns first match.", "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to search for"}, "direction": {"type": "string", "enum": ["down", "up"], "default": "down"}, "max_scrolls": {"type": "integer", "default": 5}}, "required": ["text"]}},
+        # Grounding cascade (P4-D)
+        {"name": "find_and_ground", "description": "Find a UI element using cascading grounding methods (AT-SPI → OCR → Vision). Returns coordinates with method attribution.", "input_schema": {"type": "object", "properties": {"description": {"type": "string", "description": "Text or description of the element to find"}}, "required": ["description"]}},
     ]
 
 
 def execute_tool(name: str, input_data: dict) -> dict:
     """Execute a tool and return result."""
     global _last_screen_hash
+
+    # P3-C: Check cache for cacheable read-only tools
+    if name in _CACHEABLE_TOOLS and _CACHE_TTL > 0:
+        ck = _cache_key(name, input_data)
+        cached = _cache_get(ck)
+        if cached is not None:
+            return cached
+
     result = _execute_tool_inner(name, input_data)
+
+    # P3-C: Cache result for cacheable tools
+    if name in _CACHEABLE_TOOLS and _CACHE_TTL > 0:
+        _cache_set(ck, result)
 
     # Update hash when screenshot tools produce images
     if name in ("screenshot", "cdp_screenshot", "ff_screenshot", "annotated_screenshot"):
@@ -620,43 +990,79 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             if not task:
                 return {"type": "text", "text": "Missing 'task' parameter"}
             max_steps = input_data.get("max_steps", 30)
+
+            # P3-B: Use planning model for initial call, exec model for steps
             try:
-                backend = get_backend()
+                plan_backend = get_backend(model_override=_PLAN_MODEL or None)
             except Exception as e:
                 return {"type": "text", "text": f"get_backend error: {e}"}
-            
+            try:
+                exec_backend = get_backend(model_override=_EXEC_MODEL or None)
+            except Exception:
+                exec_backend = plan_backend
+
             # Prepare tools list (exclude plan_and_execute to avoid recursion)
             all_tools = create_tools()
             tools = [t for t in all_tools if t["name"] != "plan_and_execute"]
-            
+
             messages = [{"role": "user", "content": task}]
             history = []
             step = 0
-            
+            _replan_last_tokens = None  # P4-G: track previous OCR state
+
             while step < max_steps:
+                # P4-G: Proactive plan adaptation — check for environment divergence
+                if (_REPLAN_ENABLED and step > 0
+                        and step % _REPLAN_INTERVAL == 0):
+                    try:
+                        _ocr_img = take_screenshot()
+                        if _ocr_img:
+                            from .ocr_tool import ocr_extract_lines
+                            _ocr_lines = ocr_extract_lines(_ocr_img, threshold=0.2)
+                            current_tokens = [str(x.get("text", "")).strip() for x in _ocr_lines if str(x.get("text", "")).strip()]
+                            if _replan_last_tokens is not None and _check_plan_divergence(_replan_last_tokens, current_tokens):
+                                replan_msg = (
+                                    "[System] Environment has changed significantly since the last check. "
+                                    f"Current screen text: {' | '.join(current_tokens[:20])}. "
+                                    "Please re-evaluate your plan and adjust remaining steps if needed."
+                                )
+                                messages.append({"role": "user", "content": replan_msg})
+                            _replan_last_tokens = current_tokens
+                    except Exception:
+                        pass  # OCR not available — skip replan check
+
+                # P3-A: Compress history before LLM call
+                messages = _compress_history(messages)
+
+                # Use plan_backend for the first call, exec_backend for subsequent
+                active_backend = plan_backend if step == 0 else exec_backend
                 try:
-                    resp = backend.chat(messages, tools, SYSTEM_PROMPT)
+                    resp = active_backend.chat(messages, tools, SYSTEM_PROMPT)
                 except Exception as e:
                     return {"type": "text", "text": f"LLM call failed at step {step}: {e}"}
-                
+
+                # P3-F: Track token usage
+                usage = resp.get("usage")
+                _track_phase("plan_and_execute", usage)
+
                 tool_calls = resp.get("tool_calls", [])
                 if not tool_calls:
                     # Task complete
                     summary = resp.get("text", "")
                     return {"type": "dict", "completed": True, "summary": summary, "steps": step, "history": history}
-                
+
                 # Process each tool call
                 for call in tool_calls:
                     tname = call["name"]
                     tinput = call["input"]
                     call_id = call.get("id", f"call_{step}_{len(history)}")
-                    
+
                     # Execute the tool
                     try:
                         tresult = execute_tool(tname, tinput)
                     except Exception as e:
                         tresult = {"type": "text", "text": f"Tool execution error: {e}"}
-                    
+
                     history.append({
                         "step": step + 1,
                         "tool": tname,
@@ -664,7 +1070,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         "result": tresult,
                         "call_id": call_id
                     })
-                    
+
                     # Append assistant message with tool_use
                     messages.append({
                         "role": "assistant",
@@ -676,9 +1082,9 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                         "role": "user",
                         "content": f"Tool: {tname}\nResult: {json.dumps(tresult, ensure_ascii=False)}"
                     })
-                    
+
                 step += 1
-            
+
             return {"type": "dict", "completed": False, "summary": "Max steps reached", "steps": max_steps, "history": history}
 
         # Application launch tools
@@ -1058,6 +1464,29 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 except Exception as e:
                     last_err = str(e)
                 time.sleep(poll_interval)
+            # P4-C: Scroll-to-find fallback before giving up
+            def _ocr_click_search():
+                try:
+                    from .ocr_tool import ocr_find_text as _ocr_f
+                    _img = take_screenshot()
+                    if not _img:
+                        return None
+                    _m = _ocr_f(_img, text)
+                    return _m if _m else None
+                except Exception:
+                    return None
+            scroll_result = _scroll_and_find(_ocr_click_search)
+            if scroll_result:
+                scroll_result.sort(key=lambda m: m.get("score", 0), reverse=True)
+                match = scroll_result[index] if abs(index) < len(scroll_result) else scroll_result[0]
+                cx, cy = match["center"]
+                if button == "double":
+                    double_click(cx, cy)
+                elif button == "right":
+                    right_click(cx, cy)
+                else:
+                    click(cx, cy)
+                return {"type": "dict", "clicked": match["text"], "center": [cx, cy], "score": match.get("score"), "scrolled": True, "text": f"Clicked '{match['text']}' at ({cx}, {cy}) [{button}] (after scrolling)"}
             return {"type": "text", "text": f"click_text: '{text}' not found after {timeout}s" + (f" (last error: {last_err})" if last_err else "")}
 
         elif name == "screen_inspect":
@@ -1364,6 +1793,22 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             command = input_data.get("command", "")
             timeout = min(float(input_data.get("timeout", 30)), 120)
             cwd = input_data.get("cwd") or os.path.expanduser("~")
+
+            # P4-E: Sandbox check
+            allowed, reason = _sandbox_check(command)
+            _command_audit_log.append({
+                "command": command, "allowed": allowed, "reason": reason,
+                "ts": _time.time(),
+            })
+            if not allowed:
+                return {"type": "text", "text": f"Command blocked by sandbox: {reason}"}
+
+            # P4-E: Optional firejail wrapper
+            if _FIREJAIL_ENABLED:
+                import shutil as _shutil
+                if _shutil.which("firejail"):
+                    command = f"firejail --noprofile --quiet -- {command}"
+
             try:
                 r = _sp.run(
                     command, shell=True, capture_output=True, text=True,
@@ -1422,6 +1867,74 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             _sp.Popen(["xdg-open", url], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
             return {"type": "text", "text": f"Opened {url} in default browser"}
 
+        # P4-B: Clipboard tools
+        elif name == "clipboard_read":
+            try:
+                text = clipboard_read()
+                return {"type": "text", "text": text if text else "(clipboard empty)"}
+            except Exception as e:
+                return {"type": "text", "text": f"clipboard_read error: {e}"}
+
+        elif name == "clipboard_write":
+            text = input_data.get("text", "")
+            try:
+                clipboard_write(text)
+                return {"type": "text", "text": f"Wrote {len(text)} chars to clipboard"}
+            except Exception as e:
+                return {"type": "text", "text": f"clipboard_write error: {e}"}
+
+        elif name == "clipboard_copy_paste":
+            import time as _t
+            try:
+                press_key("ctrl+c")
+                _t.sleep(0.2)
+                content = clipboard_read()
+                if input_data.get("paste", False):
+                    press_key("ctrl+v")
+                    _t.sleep(0.1)
+                return {"type": "text", "text": content if content else "(clipboard empty)"}
+            except Exception as e:
+                return {"type": "text", "text": f"clipboard_copy_paste error: {e}"}
+
+        # P4-C: Scroll-to-find
+        elif name == "scroll_to_find":
+            search_text = input_data.get("text", "")
+            if not search_text:
+                return {"type": "text", "text": "Missing 'text' parameter"}
+            direction = input_data.get("direction", "down")
+            max_scrolls = input_data.get("max_scrolls", _SCROLL_FIND_MAX)
+            def _ocr_search():
+                try:
+                    from .ocr_tool import ocr_find_text
+                    img = take_screenshot()
+                    if not img:
+                        return None
+                    matches = ocr_find_text(img, search_text)
+                    return matches if matches else None
+                except Exception:
+                    return None
+            # Try without scrolling first
+            initial = _ocr_search()
+            if initial:
+                best = sorted(initial, key=lambda m: m.get("score", 0), reverse=True)[0]
+                return {"type": "dict", "found": True, "center": best["center"], "text": best["text"], "score": best.get("score"), "scrolls": 0, "text": f"Found '{best['text']}' at {best['center']} (no scroll needed)"}
+            result = _scroll_and_find(_ocr_search, max_scrolls=max_scrolls, direction=direction)
+            if result:
+                best = sorted(result, key=lambda m: m.get("score", 0), reverse=True)[0]
+                return {"type": "dict", "found": True, "center": best["center"], "text": best["text"], "score": best.get("score"), "text": f"Found '{best['text']}' at {best['center']} after scrolling"}
+            return {"type": "text", "text": f"scroll_to_find: '{search_text}' not found after {max_scrolls} scrolls {direction}"}
+
+        # P4-D: Grounding cascade
+        elif name == "find_and_ground":
+            description = input_data.get("description", "").strip()
+            if not description:
+                return {"type": "text", "text": "Missing 'description' parameter"}
+            result = _grounding_cascade(description)
+            if result:
+                cx, cy, confidence, method = result
+                return {"type": "dict", "x": cx, "y": cy, "confidence": confidence, "method": method, "text": f"Grounded '{description}' at ({cx},{cy}) via {method} (conf={confidence:.2f})"}
+            return {"type": "text", "text": f"find_and_ground: '{description}' not found by any grounding method"}
+
         else:
             return {"type": "text", "text": f"Unknown tool: {name}"}
 
@@ -1429,11 +1942,44 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
         return {"type": "text", "text": f"Error: {e}"}
 
 
+def _format_tool_result(tool_use, tool_result):
+    """Format a tool execution result into the message format expected by LLM APIs."""
+    result_type = tool_result.get("type", "text")
+    if result_type == "image":
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "content": [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": tool_result["base64"]}}],
+        }
+    elif result_type == "image_and_text":
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": tool_result["base64"]}},
+                {"type": "text", "text": tool_result.get("text", "")},
+            ],
+        }
+    elif result_type == "dict":
+        result_copy = {k: v for k, v in tool_result.items() if k != "type"}
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "content": json.dumps(result_copy, ensure_ascii=False, indent=2),
+        }
+    else:
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use.id,
+            "content": tool_result.get("text", str(tool_result)),
+        }
+
+
 def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-20250514",
               log_file: str = None):
     """
     Run the GUI automation agent for a given task.
-    
+
     Args:
         task: Natural language description of what to do
         max_steps: Maximum number of tool-use steps
@@ -1441,6 +1987,7 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
         log_file: Optional path to write structured JSON run log
     """
     import datetime
+    reset_token_stats()  # P3-F: Reset stats at start
     backend = get_backend(model)
     tools = create_tools()
 
@@ -1479,6 +2026,9 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
     for step in range(max_steps):
         print(f"\n--- Step {step + 1}/{max_steps} ---")
 
+        # P3-A: Compress history before LLM call
+        messages = _compress_history(messages)
+
         try:
             response = backend.chat(
                 messages=messages,
@@ -1497,6 +2047,13 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
                 return f"Agent stopped: 3 consecutive backend errors. Last: {e}"
             messages.append({"role": "user", "content": f"[System] Backend error occurred: {e}. Please retry."})
             continue
+
+        # P3-F: Track token usage per call
+        usage = response.get("usage")
+        _track_phase("run_agent", usage)
+        # Track per-tool: attribute usage to all tool calls in this step
+        for tc in response.get("tool_calls", []):
+            _track_tokens(tc.get("name", "unknown"), usage)
 
         last_response = response
 
@@ -1533,71 +2090,40 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
         # Execute tools
         step_log = {"step": step + 1, "tools": [], "type": "tool_step"}
         tool_results = []
-        for tool_use in tool_uses:
+
+        # P4-F: Run perception tools in parallel when all are safe
+        all_parallel = (_PARALLEL_TOOLS_ENABLED
+                        and len(tool_uses) > 1
+                        and all(tu.name in _PARALLEL_SAFE_TOOLS for tu in tool_uses))
+        if all_parallel:
             t0 = _time.time()
-            tool_result = execute_tool(tool_use.name, tool_use.input)
+            parallel_results = _execute_tools_parallel(tool_uses)
             elapsed = round(_time.time() - t0, 3)
+            for tool_use, tool_result in parallel_results:
+                tool_log_entry = {
+                    "name": tool_use.name, "input": tool_use.input,
+                    "result_type": tool_result.get("type", "text"),
+                    "elapsed_s": elapsed, "parallel": True,
+                }
+                if tool_result.get("text"):
+                    tool_log_entry["result_text"] = tool_result["text"][:500]
+                step_log["tools"].append(tool_log_entry)
+                tool_results.append(_format_tool_result(tool_use, tool_result))
+        else:
+            for tool_use in tool_uses:
+                t0 = _time.time()
+                tool_result = execute_tool(tool_use.name, tool_use.input)
+                elapsed = round(_time.time() - t0, 3)
 
-            # Log tool execution (skip base64 image data to keep log small)
-            tool_log_entry = {
-                "name": tool_use.name,
-                "input": tool_use.input,
-                "result_type": tool_result.get("type", "text"),
-                "elapsed_s": elapsed,
-            }
-            if tool_result.get("text"):
-                tool_log_entry["result_text"] = tool_result["text"][:500]
-            step_log["tools"].append(tool_log_entry)
-
-            result_type = tool_result.get("type", "text")
-
-            if result_type == "image":
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": [{
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": tool_result["base64"],
-                        }
-                    }],
-                })
-            elif result_type == "image_and_text":
-                # Annotated screenshots: send both image and text description
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": tool_result["base64"],
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": tool_result.get("text", ""),
-                        }
-                    ],
-                })
-            elif result_type == "dict":
-                # Structured data results (e.g., list_windows)
-                result_copy = {k: v for k, v in tool_result.items() if k != "type"}
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": json.dumps(result_copy, ensure_ascii=False, indent=2),
-                })
-            else:
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_use.id,
-                    "content": tool_result.get("text", str(tool_result)),
-                })
+                tool_log_entry = {
+                    "name": tool_use.name, "input": tool_use.input,
+                    "result_type": tool_result.get("type", "text"),
+                    "elapsed_s": elapsed,
+                }
+                if tool_result.get("text"):
+                    tool_log_entry["result_text"] = tool_result["text"][:500]
+                step_log["tools"].append(tool_log_entry)
+                tool_results.append(_format_tool_result(tool_use, tool_result))
 
         messages.append({"role": "user", "content": tool_results})
         run_log["steps"].append(step_log)
@@ -1606,6 +2132,17 @@ def run_agent(task: str, max_steps: int = 30, model: str = "claude-sonnet-4-2025
         run_log["status"] = "max_steps_reached"
     if last_response and last_response.get("text"):
         run_log["result"] = last_response["text"]
+
+    # P3-F: Print per-tool token breakdown
+    stats = get_token_stats()
+    if stats["tools"]:
+        print("\n--- Token Usage Breakdown ---")
+        for tname, tdata in sorted(stats["tools"].items()):
+            print(f"  {tname}: {tdata['input_tokens']}in + {tdata['output_tokens']}out ({tdata['calls']} calls)")
+    if stats["phases"]:
+        for pname, pdata in sorted(stats["phases"].items()):
+            print(f"  [{pname}]: {pdata['input_tokens']}in + {pdata['output_tokens']}out ({pdata['calls']} calls)")
+
     _save_log()
 
     if last_response and last_response.get("text"):
