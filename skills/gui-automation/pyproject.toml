@@ -38,7 +38,7 @@ dev = [
 ]
 
 [project.scripts]
-clawui = "src.cli:main"
+clawui = "clawui.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/longgo1001/clawui"
@@ -50,5 +50,8 @@ filterwarnings = [
     "ignore:.*Atspi.*is deprecated:DeprecationWarning",
 ]
 
-[tool.setuptools.packages.find]
-include = ["src*"]
+[tool.setuptools]
+packages = ["clawui"]
+
+[tool.setuptools.package-dir]
+clawui = "src"
