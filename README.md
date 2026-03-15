@@ -119,7 +119,8 @@ ocr_tool.py    ← Tesseract OCR integration
 
 ## Troubleshooting
 
-Run `clawui doctor` to diagnose common issues:
+Run `clawui doctor` to diagnose common issues.
+Use `clawui doctor --fix` to auto-install missing apt/pip dependencies when possible:
 
 | Issue | Fix |
 |-------|-----|

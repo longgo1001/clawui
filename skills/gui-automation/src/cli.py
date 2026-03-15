@@ -168,13 +168,64 @@ def _run_inspect(args) -> int:
     return 0
 
 
-def _run_doctor() -> int:
-    """Run environment diagnostics and report status of all backends."""
+def _run_doctor(fix: bool = False) -> int:
+    """Run environment diagnostics and report status of all backends.
+    
+    With --fix, auto-install missing system packages and Python deps.
+    """
     import shutil
 
     print(f"ClawUI Doctor v{VERSION}")
+    if fix:
+        print("🔧 Fix mode enabled — will attempt to install missing dependencies")
     print("=" * 50)
     issues = []
+    fixes_applied = []
+
+    def _apt_install(packages: list[str], label: str) -> bool:
+        """Attempt to install system packages via apt."""
+        if not fix:
+            return False
+        if not shutil.which("apt-get"):
+            print(f"      ⚠️  apt-get not found, cannot auto-install {label}")
+            return False
+        try:
+            print(f"      🔧 Installing {label}...")
+            result = subprocess.run(
+                ["sudo", "apt-get", "install", "-y"] + packages,
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                print(f"      ✅ Installed {label}")
+                fixes_applied.append(f"Installed system package(s): {', '.join(packages)}")
+                return True
+            else:
+                print(f"      ❌ Failed to install {label}: {result.stderr[:200]}")
+                return False
+        except Exception as e:
+            print(f"      ❌ Install error: {e}")
+            return False
+
+    def _pip_install(packages: list[str], label: str) -> bool:
+        """Attempt to install Python packages via pip."""
+        if not fix:
+            return False
+        try:
+            print(f"      🔧 Installing {label}...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--quiet"] + packages,
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                print(f"      ✅ Installed {label}")
+                fixes_applied.append(f"Installed Python package(s): {', '.join(packages)}")
+                return True
+            else:
+                print(f"      ❌ Failed: {result.stderr[:200]}")
+                return False
+        except Exception as e:
+            print(f"      ❌ Install error: {e}")
+            return False
 
     # 1. Display server
     print("\n🖥️  Display Server")
@@ -202,13 +253,22 @@ def _run_doctor() -> int:
 
     # 3. X11 tools
     print("\n🪟 X11 Tools")
+    missing_x11 = []
     for tool in ["xdotool", "xwininfo", "xprop"]:
         path = shutil.which(tool)
         if path:
             print(f"  ✅ {tool}: {path}")
         else:
             print(f"  ❌ {tool}: not found")
+            missing_x11.append(tool)
             issues.append(f"{tool} not found — install xdotool / x11-utils")
+    if missing_x11:
+        pkgs = []
+        if "xdotool" in missing_x11:
+            pkgs.append("xdotool")
+        if "xwininfo" in missing_x11 or "xprop" in missing_x11:
+            pkgs.append("x11-utils")
+        _apt_install(pkgs, ", ".join(pkgs))
 
     # 4. Screenshot tools
     print("\n📸 Screenshot")
@@ -234,6 +294,7 @@ def _run_doctor() -> int:
     else:
         print("  ⚠️  tesseract not found — OCR features will be limited")
         issues.append("tesseract not found — install tesseract-ocr for OCR features")
+        _apt_install(["tesseract-ocr"], "tesseract-ocr")
 
     # 6. CDP (Chromium DevTools Protocol)
     print("\n🌐 CDP (Browser Automation)")
@@ -266,26 +327,41 @@ def _run_doctor() -> int:
     # 8. Python dependencies
     print("\n🐍 Python Dependencies")
     deps = {
-        "PIL": "Pillow (image processing)",
-        "numpy": "NumPy (annotated screenshots)",
-        "pytesseract": "pytesseract (OCR wrapper)",
-        "websocket": "websocket-client (CDP)",
+        "PIL": ("Pillow (image processing)", "Pillow"),
+        "numpy": ("NumPy (annotated screenshots)", "numpy"),
+        "pytesseract": ("pytesseract (OCR wrapper)", "pytesseract"),
+        "websocket": ("websocket-client (CDP)", "websocket-client"),
     }
-    for mod, desc in deps.items():
+    missing_pip = []
+    for mod, (desc, pip_name) in deps.items():
         try:
             __import__(mod)
             print(f"  ✅ {desc}")
         except ImportError:
             print(f"  ❌ {desc} — not installed")
             issues.append(f"Missing Python package: {desc}")
+            missing_pip.append(pip_name)
+    if missing_pip:
+        _pip_install(missing_pip, ", ".join(missing_pip))
 
     # Summary
     print("\n" + "=" * 50)
+    if fixes_applied:
+        print(f"🔧 {len(fixes_applied)} fix(es) applied:")
+        for f in fixes_applied:
+            print(f"  • {f}")
+        print()
     if issues:
-        print(f"⚠️  {len(issues)} issue(s) found:")
-        for i, issue in enumerate(issues, 1):
-            print(f"  {i}. {issue}")
-        return 1
+        remaining = len(issues) - len(fixes_applied)
+        if remaining > 0:
+            print(f"⚠️  {remaining} issue(s) remaining:")
+            for i, issue in enumerate(issues, 1):
+                print(f"  {i}. {issue}")
+            if not fix:
+                print(f"\n💡 Tip: run 'clawui doctor --fix' to auto-install missing dependencies")
+        else:
+            print("✅ All issues fixed! Run 'clawui doctor' again to verify.")
+        return 0 if fixes_applied and remaining == 0 else 1
     else:
         print("✅ All checks passed — ClawUI is ready!")
         return 0
@@ -590,7 +666,8 @@ def main():
     wait_p.add_argument("--interval", type=float, default=0.5, help="Poll interval in seconds (default: 0.5)")
 
     # Doctor (diagnostics)
-    subparsers.add_parser("doctor", help="Check environment and diagnose issues")
+    doctor_p = subparsers.add_parser("doctor", help="Check environment and diagnose issues")
+    doctor_p.add_argument("--fix", action="store_true", help="Auto-install missing system packages and Python dependencies")
 
     # Annotate
     annotate_p = subparsers.add_parser("annotate", help="Take annotated screenshot with numbered element labels (Set-of-Mark)")
@@ -843,7 +920,7 @@ def main():
             return _runtime_error("wait", e)
 
     elif args.command == "doctor":
-        return _run_doctor()
+        return _run_doctor(fix=getattr(args, 'fix', False))
 
     elif args.command == "annotate":
         try:

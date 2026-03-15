@@ -380,6 +380,13 @@ class TestCLI(unittest.TestCase):
         from clawui.cli import _run_inspect
         assert callable(_run_inspect)
 
+    def test_run_doctor_accepts_fix_flag(self):
+        from clawui.cli import _run_doctor
+        import inspect
+        sig = inspect.signature(_run_doctor)
+        assert "fix" in sig.parameters
+        assert sig.parameters["fix"].default is False
+
     def test_inspect_with_mock_args(self):
         """Test inspect function signature accepts expected args."""
         from clawui.cli import _run_inspect
