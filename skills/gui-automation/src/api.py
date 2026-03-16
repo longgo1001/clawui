@@ -345,7 +345,7 @@ def windows() -> list[dict]:
 
 def _clear_value_js() -> str:
     """Return JS snippet to clear an input's value (Python 3.10 compatible)."""
-    return '"best.value = \\"\\";'
+    return 'best.value = "";'
 
 
 class _BrowserAPI:
