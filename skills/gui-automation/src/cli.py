@@ -438,6 +438,7 @@ def _run_selftest(args) -> int:
     """Run end-to-end self-test validating the full automation pipeline."""
     import tempfile
     import shutil
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
     print(f"ClawUI Self-Test v{VERSION}")
     print("=" * 50)
@@ -450,8 +451,11 @@ def _run_selftest(args) -> int:
     def _test(name: str, fn) -> bool:
         nonlocal passed, failed, total
         total += 1
+        step_timeout = float(getattr(args, "step_timeout", 20.0) or 20.0)
         try:
-            result = fn()
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="clawui-selftest") as ex:
+                fut = ex.submit(fn)
+                result = fut.result(timeout=step_timeout)
             if result:
                 print(f"  ✅ {name}")
                 passed += 1
@@ -460,6 +464,10 @@ def _run_selftest(args) -> int:
                 print(f"  ❌ {name}: returned falsy")
                 failed += 1
                 return False
+        except FuturesTimeoutError:
+            print(f"  ❌ {name}: timed out after {step_timeout:.1f}s")
+            failed += 1
+            return False
         except Exception as e:
             print(f"  ❌ {name}: {e}")
             failed += 1
@@ -709,6 +717,7 @@ def main():
     selftest_p = subparsers.add_parser("selftest", help="Run end-to-end self-test: screenshot, OCR, browser automation")
     selftest_p.add_argument("--quick", action="store_true", help="Skip browser tests (desktop-only)")
     selftest_p.add_argument("--keep", action="store_true", help="Keep temporary files after test")
+    selftest_p.add_argument("--step-timeout", type=float, default=20.0, help="Per-check timeout in seconds (default: 20)")
 
     # Version
     subparsers.add_parser("version", help="Show version")
