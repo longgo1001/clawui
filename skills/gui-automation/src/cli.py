@@ -612,12 +612,14 @@ def main():
     run_p.add_argument("--log", help="Write structured JSON run log to file (for debugging/replay analysis)")
 
     # List apps
-    subparsers.add_parser("apps", help="List running applications (AT-SPI + X11)")
+    apps_p = subparsers.add_parser("apps", help="List running applications (AT-SPI + X11)")
+    apps_p.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
 
     # UI tree
     tree_p = subparsers.add_parser("tree", help="Show UI element tree")
     tree_p.add_argument("--app", help="Filter by application name")
     tree_p.add_argument("--depth", type=int, default=5, help="Maximum tree depth")
+    tree_p.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
 
     # Screenshot
     screen_p = subparsers.add_parser("screenshot", help="Take a screenshot")
@@ -632,10 +634,12 @@ def main():
         help="Element source: desktop (atspi), browser (cdp), or both (auto)",
     )
     elements_p.add_argument("--max", type=int, default=80, help="Maximum elements to list")
+    elements_p.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
 
     # OCR find
     find_p = subparsers.add_parser("find", help="Find text on screen using OCR")
     find_p.add_argument("text", help="Text to find (case-insensitive partial match)")
+    find_p.add_argument("--json", action="store_true", dest="json_output", help="Output as JSON")
 
     # Click
     click_p = subparsers.add_parser("click", help="Click by OCR text match or explicit coordinates")
@@ -756,7 +760,10 @@ def main():
             return _import_error("perception", e)
         try:
             apps = list_applications()
-            if isinstance(apps, list):
+            if hasattr(args, 'json_output') and args.json_output:
+                import json as json_mod
+                print(json_mod.dumps(apps if isinstance(apps, list) else [apps], ensure_ascii=False, indent=2))
+            elif isinstance(apps, list):
                 for app in apps:
                     print(f"  • {app}")
             else:
@@ -772,7 +779,11 @@ def main():
             return _import_error("perception", e)
         try:
             tree = get_ui_tree_summary(app_name=args.app, max_depth=args.depth)
-            print(tree)
+            if hasattr(args, 'json_output') and args.json_output:
+                import json as json_mod
+                print(json_mod.dumps({"tree": tree}, ensure_ascii=False, indent=2))
+            else:
+                print(tree)
             return 0
         except Exception as e:
             return _runtime_error("tree", e)
@@ -802,12 +813,19 @@ def main():
         try:
             _, elements = take_annotated_screenshot(source=args.source, max_elements=args.max)
             if not elements:
-                print("No interactive elements found.")
+                if hasattr(args, 'json_output') and args.json_output:
+                    print("[]")
+                else:
+                    print("No interactive elements found.")
                 return 0
-            print(f"Found {len(elements)} interactive elements:")
-            for el in elements:
-                cx, cy = el.get("center", [None, None])
-                print(f"[{el.get('index')}] {el.get('role')}: {el.get('name')} @ ({cx}, {cy})")
+            if hasattr(args, 'json_output') and args.json_output:
+                import json as json_mod
+                print(json_mod.dumps(elements, ensure_ascii=False, indent=2))
+            else:
+                print(f"Found {len(elements)} interactive elements:")
+                for el in elements:
+                    cx, cy = el.get("center", [None, None])
+                    print(f"[{el.get('index')}] {el.get('role')}: {el.get('name')} @ ({cx}, {cy})")
             return 0
         except Exception as e:
             return _runtime_error("elements", e)
@@ -822,13 +840,20 @@ def main():
             image = take_screenshot()
             matches = ocr_find_text(image, args.text)
             if not matches:
-                print(f"No matches found for: {args.text}")
+                if hasattr(args, 'json_output') and args.json_output:
+                    print("[]")
+                else:
+                    print(f"No matches found for: {args.text}")
                 return 0
-            print(f"Found {len(matches)} match(es):")
-            for i, m in enumerate(matches, start=1):
-                cx, cy = m.get("center", [None, None])
-                score = m.get("score", 0)
-                print(f"{i}. '{m.get('text', '')}' @ ({cx}, {cy}) score={score:.2f}")
+            if hasattr(args, 'json_output') and args.json_output:
+                import json as json_mod
+                print(json_mod.dumps(matches, ensure_ascii=False, indent=2))
+            else:
+                print(f"Found {len(matches)} match(es):")
+                for i, m in enumerate(matches, start=1):
+                    cx, cy = m.get("center", [None, None])
+                    score = m.get("score", 0)
+                    print(f"{i}. '{m.get('text', '')}' @ ({cx}, {cy}) score={score:.2f}")
             return 0
         except Exception as e:
             return _runtime_error("find", e)
@@ -1002,7 +1027,7 @@ def main():
         return 0
 
     elif args.command == "config":
-        from .config import init_config, _default_config_path, get_config_value as _gcv2, generate_default_config
+        from .config import init_config, _default_config_path, get_config_value as _gcv2
         action = getattr(args, "config_action", None)
         if action == "init":
             path = init_config()
@@ -1024,7 +1049,7 @@ def main():
             if val is not None:
                 print(val)
             else:
-                print(f"(not set)")
+                print("(not set)")
             return 0
         else:
             print("Usage: clawui config {init|path|show|get <key>}")
