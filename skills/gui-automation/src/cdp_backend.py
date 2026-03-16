@@ -106,7 +106,9 @@ class CDPBackend:
     def click_at(self, x: int, y: int):
         """Click at viewport coordinates via mouse dispatch."""
         self._ensure_connection()
-        self.client.dispatch_mouse(x, y)
+        ok = self.client.dispatch_mouse(x, y)
+        if not ok:
+            raise RuntimeError(f"CDP click_at failed at ({x},{y})")
         return f"clicked at ({x},{y})"
 
     def get_page_info(self) -> Dict[str, Any]:

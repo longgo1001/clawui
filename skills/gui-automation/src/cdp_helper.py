@@ -336,52 +336,69 @@ class CDPClient:
             return False
 
     def _send_cdp_command(self, ws_url: str, method: str, params: dict = None) -> Any:
-        """Send CDP command via persistent WebSocket (falls back to one-shot if needed)."""
-        # Try persistent connection first
-        if self._ws and self._ws_url == ws_url:
-            try:
-                self._msg_id += 1
-                msg = {"id": self._msg_id, "method": method, "params": params or {}}
-                self._ws.send(json.dumps(msg))
-                # Read responses until we get our reply (skip events)
-                deadline = time.time() + 15
-                while time.time() < deadline:
-                    raw = self._ws.recv()
-                    response = json.loads(raw)
-                    if response.get("id") == self._msg_id:
-                        return response.get("result")
-                    # Skip CDP events (no "id" field)
-                return None
-            except Exception:
-                # Connection died, clean up and fall through to reconnect
-                try:
-                    self._ws.close()
-                except Exception:
-                    pass
-                self._ws = None
-                self._ws_url = None
+        """Send CDP command via persistent WebSocket with lightweight retry.
 
-        # Try to establish/re-establish persistent connection
-        try:
-            import websocket
-            self._ws = websocket.create_connection(ws_url, timeout=10)
-            self._ws_url = ws_url
+        Reliability behavior:
+        - Reuses persistent WS when healthy.
+        - If connection drops or target detaches mid-command, reconnects once and retries.
+        - Surfaces CDP protocol errors via logger, returns None to callers.
+        """
+
+        def _send_once() -> Any:
             self._msg_id += 1
-            msg = {"id": self._msg_id, "method": method, "params": params or {}}
+            msg_id = self._msg_id
+            msg = {"id": msg_id, "method": method, "params": params or {}}
             self._ws.send(json.dumps(msg))
             deadline = time.time() + 15
             while time.time() < deadline:
                 raw = self._ws.recv()
                 response = json.loads(raw)
-                if response.get("id") == self._msg_id:
-                    return response.get("result")
+                if response.get("id") != msg_id:
+                    continue  # skip CDP events / other in-flight messages
+                if response.get("error"):
+                    logger.warning("CDP %s failed: %s", method, response.get("error"))
+                    return None
+                return response.get("result")
+            logger.warning("CDP %s timed out waiting for response", method)
             return None
-        except ImportError:
-            return self._send_via_websocat(ws_url, method, params)
-        except Exception:
+
+        for attempt in range(2):
+            # Ensure WS connection exists (or re-establish if this is a retry)
+            if attempt > 0 or not (self._ws and self._ws_url == ws_url):
+                try:
+                    import websocket
+                    if self._ws:
+                        try:
+                            self._ws.close()
+                        except Exception:
+                            pass
+                    self._ws = websocket.create_connection(ws_url, timeout=10)
+                    self._ws_url = ws_url
+                except ImportError:
+                    return self._send_via_websocat(ws_url, method, params)
+                except Exception as e:
+                    logger.warning("CDP WS connect failed for %s: %s", method, e)
+                    self._ws = None
+                    self._ws_url = None
+                    continue
+
+            try:
+                result = _send_once()
+                if result is not None:
+                    return result
+            except Exception as e:
+                logger.warning("CDP %s transport error (attempt %d): %s", method, attempt + 1, e)
+
+            # prepare retry on next loop
+            if self._ws:
+                try:
+                    self._ws.close()
+                except Exception:
+                    pass
             self._ws = None
             self._ws_url = None
-            return None
+
+        return None
 
     def _raw_cdp(self, method: str, params: dict = None) -> Any:
         """Send raw CDP command to active tab using persistent connection."""
@@ -389,15 +406,22 @@ class CDPClient:
             return None
         return self._send_cdp_command(self._ws_url, method, params or {})
 
-    def dispatch_mouse(self, x: int, y: int, click_type: str = "click"):
-        """Simulate real mouse click at viewport coordinates."""
-        self._raw_cdp("Input.dispatchMouseEvent", {
+    def dispatch_mouse(self, x: int, y: int, click_type: str = "click") -> bool:
+        """Simulate real mouse click at viewport coordinates.
+
+        Returns True when press+release are sent successfully.
+        """
+        pressed = self._raw_cdp("Input.dispatchMouseEvent", {
             "type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1
         })
         time.sleep(0.05)
-        self._raw_cdp("Input.dispatchMouseEvent", {
+        released = self._raw_cdp("Input.dispatchMouseEvent", {
             "type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1
         })
+        ok = (pressed is not None and released is not None)
+        if not ok:
+            logger.warning("dispatch_mouse failed at (%s,%s)", x, y)
+        return ok
 
     def dispatch_key(self, text: str):
         """Simulate real keyboard typing character by character."""
