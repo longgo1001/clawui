@@ -38,3 +38,6 @@
 
 ---
 Last updated: 2026-03-16
+
+- [x] **Stream Capture module** (2026-03-16): `clawui/stream_capture.py` - Mutter ScreenCast D-Bus API for zero-dialog ~40 FPS capture
+- [x] **Game Perception module** (2026-03-16): `clawui/game_perception.py` - auto ROI detection, threat/pickup detection, cross-frame tracking, velocity prediction, risk scoring
