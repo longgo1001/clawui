@@ -1,5 +1,6 @@
 """X11 helper for GUI automation - works with XWayland apps via xdotool/ydotool."""
 
+import os
 import subprocess
 import re
 from dataclasses import dataclass
@@ -35,8 +36,47 @@ def _run_cmd(cmd: List[str]) -> str:
         return ""
 
 
-def _get_window_class(wid: int) -> str:
-    """Get window class using xdotool, fallback to xprop."""
+def _get_process_name(pid: int) -> str:
+    """Best-effort process name lookup for class inference fallback."""
+    if pid <= 0:
+        return ""
+    try:
+        with open(f"/proc/{pid}/comm", "r", encoding="utf-8") as f:
+            name = f.read().strip()
+            if name:
+                return name
+    except Exception:
+        pass
+
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmdline = f.read().replace(b"\x00", b" ").decode("utf-8", errors="ignore").strip()
+            if cmdline:
+                return os.path.basename(cmdline.split()[0])
+    except Exception:
+        pass
+    return ""
+
+
+def _infer_class_from_process(pid: int, class_name: str) -> str:
+    """Infer class name from process for Electron/NW.js and unknown classes."""
+    normalized = (class_name or "").strip()
+    if normalized:
+        return normalized
+
+    proc = _get_process_name(pid).lower()
+    if not proc:
+        return ""
+
+    if "electron" in proc:
+        return "electron"
+    if proc in {"nw", "nwjs"}:
+        return "nwjs"
+    return proc
+
+
+def _get_window_class(wid: int, pid: int = 0) -> str:
+    """Get window class using xdotool, fallback to xprop, then process inference."""
     # Try xdotool first
     class_name = _run_cmd(['xdotool', 'getwindowclassname', str(wid)]).strip()
     if class_name:
@@ -48,10 +88,10 @@ def _get_window_class(wid: int) -> str:
         match = re.search(r'=\s*"([^"]+)"\s*,\s*"([^"]+)"', xprop_out)
         if match:
             # Return the second (human-readable) class, or first
-            return match.group(2) or match.group(1)
+            return (match.group(2) or match.group(1)).strip()
     except Exception:
         pass
-    return ""
+    return _infer_class_from_process(pid, "")
 
 
 def list_windows() -> List[X11Window]:
@@ -66,10 +106,10 @@ def list_windows() -> List[X11Window]:
             # Get window geometry
             geom = subprocess.run(['xdotool', 'getwindowgeometry', str(wid_int)], capture_output=True, text=True, timeout=2)
             title = _run_cmd(['xdotool', 'getwindowname', str(wid_int)])
-            # Use enhanced class detection
-            class_name = _get_window_class(wid_int)
             pid_line = _run_cmd(['xdotool', 'getwindowpid', str(wid_int)])
             pid = int(pid_line) if pid_line.isdigit() else 0
+            # Use enhanced class detection (includes process-based fallback)
+            class_name = _get_window_class(wid_int, pid=pid)
 
             # Parse geometry: "Window 12345:\n  Position: 100,200 (screen: 0)\n  Geometry: 800x600"
             if geom.returncode == 0:
