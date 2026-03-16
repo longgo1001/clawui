@@ -2,21 +2,38 @@
 
 AI-driven desktop automation for Linux. Control any application through natural language using AT-SPI accessibility and hybrid visual perception.
 
+## Installation
+
+```bash
+# From PyPI (recommended)
+pip install clawui
+
+# Or from source
+git clone https://github.com/longgo1001/clawui.git
+cd clawui
+pip install -e .
+```
+
+### System Dependencies (Linux)
+
+```bash
+sudo apt install gir1.2-atspi-2.0 python3-gi xdotool tesseract-ocr
+```
+
 ## Quick Start
 
 ```bash
-# Clone and setup
-git clone <your-repo>
-cd clawui
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+# Check your setup
+clawui doctor
 
-# Run the skill via OpenClaw (recommended)
-# As an OpenClaw agent, you directly call the tools in src/
+# Take a screenshot
+clawui screenshot
 
-# Or standalone:
-python3 -m src.main run "Open Firefox and search for 'OpenClaw'"
+# List accessible applications
+clawui apps
+
+# Run an AI-driven task
+clawui run "Open Firefox and search for 'OpenClaw'"
 ```
 
 ## Features
