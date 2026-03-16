@@ -26,6 +26,17 @@ def wait_for_page_load(client, timeout=10):
     return client.get_title() or "", client.get_url() or ""
 
 
+def wait_for_element(client, strategy, selector, timeout=10):
+    """Wait for element to appear in DOM and return its reference."""
+    start = time.time()
+    while time.time() - start < timeout:
+        elem = client.find_element(strategy, selector)
+        if elem:
+            return elem
+        time.sleep(0.5)
+    return None
+
+
 def with_fresh_client(test_func):
     """Decorator: create fresh client/session for each test."""
 
@@ -77,23 +88,18 @@ def test_form_interaction(client):
     # Wait for page to load
     title, url = wait_for_page_load(client)
     log(f"   Page title: '{title}'")
-    time.sleep(1)  # Extra wait for DOM
-
-    # Find username - check page content first
-    result = client.execute_script("return document.title + '|' + document.readyState;")
-    log(f"   JS state: {result}")
-
-    username = client.find_element("id", "username")
+    # Find username with retry
+    username = wait_for_element(client, "id", "username")
     assert username, "Username field not found"
     client.send_keys(username, "tomsmith")
     log("   Typed username")
 
-    password = client.find_element("id", "password")
+    password = wait_for_element(client, "id", "password")
     assert password, "Password field not found"
     client.send_keys(password, "SuperSecretPassword!")
     log("   Typed password")
 
-    btn = client.find_element("css selector", "button[type='submit']")
+    btn = wait_for_element(client, "css selector", "button[type='submit']")
     assert btn, "Login button not found"
     client.click_element(btn)
     log("   Clicked login")
