@@ -705,19 +705,32 @@ def main():
     # Version
     subparsers.add_parser("version", help="Show version")
 
+    # Config management
+    config_p = subparsers.add_parser("config", help="Manage configuration file")
+    config_sub = config_p.add_subparsers(dest="config_action")
+    config_sub.add_parser("init", help="Create default config at ~/.config/clawui/config.toml")
+    config_sub.add_parser("path", help="Show config file path")
+    config_sub.add_parser("show", help="Show current config file contents")
+    config_get_p = config_sub.add_parser("get", help="Get a config value")
+    config_get_p.add_argument("key", help="Config key (e.g., LOG_LEVEL)")
+
     # Global logging flags (apply before subcommand-specific flags)
     parser.add_argument("--log-level", choices=["debug", "info", "warning", "error"],
                         help="Set logging verbosity (also via CLAWUI_LOG_LEVEL env var)")
 
     args = parser.parse_args()
 
-    # Configure logging
+    # Configure logging — use config file as fallback for log level
     import logging as _logging
+    from .config import get_config_value as _gcv
     env_level = os.environ.get("CLAWUI_LOG_LEVEL", "").upper()
+    config_level = (_gcv("LOG_LEVEL") or "").upper()
     if args.log_level:
         level = getattr(_logging, args.log_level.upper())
     elif env_level in ("DEBUG", "INFO", "WARNING", "ERROR"):
         level = getattr(_logging, env_level)
+    elif config_level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+        level = getattr(_logging, config_level)
     else:
         level = _logging.WARNING
     _logging.basicConfig(format="%(name)s %(levelname)s: %(message)s", level=level)
@@ -987,6 +1000,35 @@ def main():
     elif args.command == "version":
         print(f"clawui {VERSION}")
         return 0
+
+    elif args.command == "config":
+        from .config import init_config, _default_config_path, get_config_value as _gcv2, generate_default_config
+        action = getattr(args, "config_action", None)
+        if action == "init":
+            path = init_config()
+            print(f"Config file: {path}")
+            return 0
+        elif action == "path":
+            print(_default_config_path())
+            return 0
+        elif action == "show":
+            path = _default_config_path()
+            if path.exists():
+                print(path.read_text())
+            else:
+                print(f"No config file at {path}")
+                print("Run 'clawui config init' to create one.")
+            return 0
+        elif action == "get":
+            val = _gcv2(args.key)
+            if val is not None:
+                print(val)
+            else:
+                print(f"(not set)")
+            return 0
+        else:
+            print("Usage: clawui config {init|path|show|get <key>}")
+            return 0
 
     parser.print_help()
     return 0

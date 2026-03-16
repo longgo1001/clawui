@@ -11,6 +11,7 @@ from functools import wraps
 
 logger = logging.getLogger("clawui.agent")
 
+from .config import get_config_value, get_config_bool, get_config_int, get_config_float
 from .screenshot import take_screenshot
 from .atspi_helper import (
     list_applications, get_ui_tree_summary, find_elements,
@@ -35,17 +36,17 @@ _VERIFY_ACTIONS = frozenset({
 
 
 # --- P3-A: Context window compression ---
-_CONTEXT_MAX_TOKENS = int(os.getenv("CLAWUI_CONTEXT_MAX_TOKENS", "80000"))
+_CONTEXT_MAX_TOKENS = get_config_int("CONTEXT_MAX_TOKENS", default=80000)
 _CONTEXT_COMPRESS_RATIO = 0.6
 _CONTEXT_KEEP_RECENT = 6
 
 # --- P3-B: Dynamic model routing ---
-_PLAN_MODEL = os.getenv("CLAWUI_PLAN_MODEL", "")
-_EXEC_MODEL = os.getenv("CLAWUI_EXEC_MODEL", "")
-_VERIFY_MODEL = os.getenv("CLAWUI_VERIFY_MODEL", "")
+_PLAN_MODEL = get_config_value("PLAN_MODEL", default="") or ""
+_EXEC_MODEL = get_config_value("EXEC_MODEL", default="") or ""
+_VERIFY_MODEL = get_config_value("VERIFY_MODEL", default="") or ""
 
 # --- P3-C: Response caching ---
-_CACHE_TTL = float(os.getenv("CLAWUI_CACHE_TTL", "5"))
+_CACHE_TTL = get_config_float("CACHE_TTL", default=5.0)
 _tool_cache = {}
 _CACHEABLE_TOOLS = frozenset({
     "ui_tree", "find_element", "cdp_page_info", "cdp_get_elements",
@@ -54,8 +55,8 @@ _CACHEABLE_TOOLS = frozenset({
 })
 
 # --- P4-C: Scroll-to-find ---
-_SCROLL_FIND_MAX = int(os.getenv("CLAWUI_SCROLL_FIND_MAX", "5"))
-_SCROLL_FIND_PAUSE = float(os.getenv("CLAWUI_SCROLL_FIND_PAUSE", "0.3"))
+_SCROLL_FIND_MAX = get_config_int("SCROLL_FIND_MAX", default=5)
+_SCROLL_FIND_PAUSE = get_config_float("SCROLL_FIND_PAUSE", default=0.3)
 
 # --- P4-E: Command sandbox ---
 _COMMAND_BLOCKLIST_BUILTINS = [
@@ -72,14 +73,14 @@ _COMMAND_BLOCKLIST_BUILTINS = [
     r"\binit\s+[06]\b",
 ]
 _COMMAND_BLOCKLIST = _COMMAND_BLOCKLIST_BUILTINS[:]
-_extra_blocklist = os.getenv("CLAWUI_COMMAND_BLOCKLIST", "")
+_extra_blocklist = get_config_value("COMMAND_BLOCKLIST", default="") or ""
 if _extra_blocklist:
     try:
         _COMMAND_BLOCKLIST.extend(json.loads(_extra_blocklist))
     except (json.JSONDecodeError, TypeError):
         pass
-_WRITABLE_PATHS = [p.strip() for p in os.getenv("CLAWUI_WRITABLE_PATHS", os.path.expanduser("~") + ":/tmp").split(":") if p.strip()]
-_FIREJAIL_ENABLED = os.getenv("CLAWUI_FIREJAIL", "0") == "1"
+_WRITABLE_PATHS = [p.strip() for p in (get_config_value("WRITABLE_PATHS", default=os.path.expanduser("~") + ":/tmp") or "").split(":") if p.strip()]
+_FIREJAIL_ENABLED = get_config_bool("FIREJAIL")
 _command_audit_log = []
 
 
@@ -100,11 +101,11 @@ def _sandbox_check(command):
     return True, "ok"
 
 # --- P4-G: Proactive plan adaptation ---
-_REPLAN_INTERVAL = int(os.getenv("CLAWUI_REPLAN_INTERVAL", "3"))
-_REPLAN_ENABLED = os.getenv("CLAWUI_REPLAN_ENABLED", "1") == "1"
+_REPLAN_INTERVAL = get_config_int("REPLAN_INTERVAL", default=3)
+_REPLAN_ENABLED = get_config_bool("REPLAN_ENABLED", default=True)
 
 # --- P4-F: Parallel perception tools ---
-_PARALLEL_TOOLS_ENABLED = os.getenv("CLAWUI_PARALLEL_TOOLS", "1") == "1"
+_PARALLEL_TOOLS_ENABLED = get_config_bool("PARALLEL_TOOLS", default=True)
 _PARALLEL_SAFE_TOOLS = frozenset(
     _CACHEABLE_TOOLS | {
         "screenshot", "find_text", "describe_screen", "find_element",
