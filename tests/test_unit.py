@@ -129,6 +129,7 @@ class TestAgentTools(unittest.TestCase):
         assert 'screenshot' in names
         assert 'click' in names
         assert 'cdp_navigate' in names
+        assert 'cdp_fill' in names
         assert 'find_text' in names
         assert 'click_text' in names
 
@@ -142,6 +143,31 @@ class TestAgentTools(unittest.TestCase):
             schema = tool['input_schema']
             assert schema.get('type') == 'object'
             assert 'properties' in schema
+
+    @patch('src.agent._get_cdp')
+    def test_execute_cdp_fill_success(self, mock_get_cdp):
+        import src.agent as agent_mod
+        agent_mod._last_screen_hash = None
+
+        mock_cdp = MagicMock()
+        mock_cdp.evaluate.return_value = {"result": {"value": {"ok": True}}}
+        mock_get_cdp.return_value = mock_cdp
+
+        result = agent_mod.execute_tool("cdp_fill", {"label": "Email", "text": "user@example.com"})
+        assert "Filled 'Email' successfully" in result.get("text", "")
+        mock_cdp.evaluate.assert_called_once()
+
+    @patch('src.agent._get_cdp')
+    def test_execute_cdp_fill_not_found(self, mock_get_cdp):
+        import src.agent as agent_mod
+        agent_mod._last_screen_hash = None
+
+        mock_cdp = MagicMock()
+        mock_cdp.evaluate.return_value = {"result": {"value": {"ok": False, "error": "No match"}}}
+        mock_get_cdp.return_value = mock_cdp
+
+        result = agent_mod.execute_tool("cdp_fill", {"label": "Nonexistent", "text": "x"})
+        assert "cdp_fill failed" in result.get("text", "")
 
 
 class TestRecorder(unittest.TestCase):

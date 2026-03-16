@@ -35,6 +35,7 @@
 ## 📋 Next Up
 - [x] 响应 GitHub Issues（如有）(Updated 2026-03-13: could not authenticate gh CLI; GITHUB_TOKEN integration incomplete)
 - [x] **Logging migration v0.8.2** (2026-03-16): Complete print→logging migration in agent.py/screenshot.py, add --log-level CLI flag and CLAWUI_LOG_LEVEL env var
+- [x] **CDP cdp_fill reliability fix** (2026-03-16): Implemented missing `cdp_fill` execution path (label/placeholder/aria-label targeting + framework-safe input/change events), added unit tests
 
 ---
 Last updated: 2026-03-16

@@ -786,7 +786,6 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 if hasattr(el, 'value') and el.value is not None:
                     info["value"] = el.value
                 results.append(info)
-            import json
             return {"type": "text", "text": json.dumps(results, ensure_ascii=False, indent=2)}
 
         elif name == "click":
@@ -1201,6 +1200,80 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 result = cdp.type_in_element(input_data["selector"], input_data["text"])
                 return {"type": "text", "text": f"Typed into '{input_data['selector']}': {result}"}
 
+            def _cdp_fill_impl():
+                label = str(input_data.get("label", "")).strip()
+                text = str(input_data.get("text", ""))
+                if not label:
+                    raise ValueError("cdp_fill requires non-empty 'label'")
+
+                q = json.dumps(label)
+                v = json.dumps(text)
+                expr = f"""(function() {{
+  const query = {q}.toLowerCase().trim();
+  const value = {v};
+
+  const textOf = (el) => (el && (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+  const has = (s) => (s || '').toLowerCase().includes(query);
+
+  const candidates = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'));
+
+  let target = candidates.find(el =>
+    has(el.getAttribute('aria-label')) ||
+    has(el.getAttribute('placeholder')) ||
+    has(el.getAttribute('name')) ||
+    has(el.getAttribute('id'))
+  );
+
+  if (!target) {{
+    target = candidates.find(el =>
+      (el.labels && Array.from(el.labels).some(lb => has(textOf(lb)))) ||
+      (() => {{
+        const id = el.getAttribute('id');
+        if (!id) return false;
+        const lb = document.querySelector(`label[for="${{CSS.escape(id)}}"]`);
+        return !!(lb && has(textOf(lb)));
+      }})() ||
+      (() => {{
+        const parentLabel = el.closest('label');
+        return !!(parentLabel && has(textOf(parentLabel)));
+      }})()
+    );
+  }}
+
+  if (!target) {{
+    return {{ok: false, error: `No input/textarea/contenteditable matched label '${label}'`}};
+  }}
+
+  target.focus();
+
+  if (target.isContentEditable) {{
+    target.textContent = value;
+    target.dispatchEvent(new InputEvent('input', {{ bubbles: true, data: value, inputType: 'insertText' }}));
+    target.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    return {{ok: true, tag: target.tagName, matched: query, mode: 'contenteditable'}};
+  }}
+
+  const proto = target.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  if (setter) {{
+    setter.call(target, value);
+  }} else {{
+    target.value = value;
+  }}
+
+  target.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  target.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  return {{ok: true, tag: target.tagName, matched: query, mode: 'value'}};
+}})();"""
+
+                result = cdp.evaluate(expr)
+                payload = (result or {}).get("result", {}).get("value") if isinstance(result, dict) else None
+                if isinstance(payload, dict) and payload.get("ok"):
+                    return {"type": "text", "text": f"Filled '{label}' successfully"}
+                if isinstance(payload, dict) and payload.get("error"):
+                    return {"type": "text", "text": f"cdp_fill failed: {payload.get('error')}"}
+                return {"type": "text", "text": f"cdp_fill result: {json.dumps(payload if payload is not None else result, ensure_ascii=False)[:300]}"}
+
             def _cdp_eval_impl():
                 result = cdp.evaluate(input_data["expression"])
                 return {"type": "text", "text": f"JS result: {json.dumps(result, ensure_ascii=False)[:500]}"}
@@ -1293,6 +1366,7 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
                 "cdp_navigate": ("CDP navigate", _cdp_navigate_impl),
                 "cdp_click": ("CDP click", _cdp_click_impl),
                 "cdp_type": ("CDP type", _cdp_type_impl),
+                "cdp_fill": ("CDP fill", _cdp_fill_impl),
                 "cdp_eval": ("CDP eval", _cdp_eval_impl),
                 "cdp_page_info": ("CDP page_info", _cdp_page_info_impl),
                 "cdp_click_at": ("CDP click_at", _cdp_click_at_impl),
@@ -1656,7 +1730,6 @@ def _execute_tool_inner(name: str, input_data: dict) -> dict:
             if not app_name or not element_name:
                 return {"type": "text", "text": "Missing 'app' or 'element'"}
             try:
-                import json
                 template_path = os.path.join(os.path.dirname(__file__), 'templates', f'{app_name}.json')
                 if not os.path.exists(template_path):
                     return {"type": "text", "text": f"Template not found: {template_path}"}
