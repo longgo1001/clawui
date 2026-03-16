@@ -191,6 +191,26 @@ clawui/
 └── SKILL.md             # OpenClaw skill manifest
 ```
 
+## Docker
+
+Run tests in a reproducible headless environment:
+
+```bash
+# Build
+docker build -t clawui-test .
+
+# Run tests
+docker run --rm clawui-test
+
+# Interactive shell
+docker run --rm -it clawui-test bash
+
+# Run a specific task
+docker run --rm clawui-test python3 -m clawui run "take a screenshot"
+```
+
+The Docker image includes Xvfb (virtual display), AT-SPI, xdotool, and all dependencies pre-installed.
+
 ## Troubleshooting
 
 ### AT-SPI not detecting applications

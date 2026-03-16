@@ -42,6 +42,51 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --timeout=120
 
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gir1.2-atspi-2.0 \
+            python3-gi \
+            libgirepository1.0-dev \
+            gobject-introspection \
+            xdotool xvfb xterm \
+            tesseract-ocr \
+            dbus-x11 at-spi2-core \
+            gnome-screenshot \
+            fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install PyGObject
+          pip install -e ".[dev]"
+          pip install pytest pytest-timeout
+
+      - name: Run E2E tests with virtual display
+        run: |
+          # Start D-Bus
+          eval "$(dbus-launch --sh-syntax)"
+          export DBUS_SESSION_BUS_ADDRESS
+
+          # Start AT-SPI registry
+          /usr/libexec/at-spi2-registryd &
+          sleep 0.3
+
+          # Run with virtual display
+          xvfb-run -s "-screen 0 1920x1080x24" \
+            pytest tests/ -v --timeout=120 -k "not marionette"
+
   lint:
     runs-on: ubuntu-24.04
     steps:

@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+*.egg-info
+.git
+.github
+recordings/
+research/
+demos/
+*.md
+!requirements.txt
