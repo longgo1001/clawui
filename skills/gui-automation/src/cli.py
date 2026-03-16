@@ -718,6 +718,10 @@ def main():
     config_sub.add_parser("show", help="Show current config file contents")
     config_get_p = config_sub.add_parser("get", help="Get a config value")
     config_get_p.add_argument("key", help="Config key (e.g., LOG_LEVEL)")
+    config_set_p = config_sub.add_parser("set", help="Set a config value")
+    config_set_p.add_argument("key", help="Config key (e.g., LOG_LEVEL, API_RETRY_MAX)")
+    config_set_p.add_argument("value", help="Value to set")
+    config_sub.add_parser("reset", help="Reset config file to defaults")
 
     # Global logging flags (apply before subcommand-specific flags)
     parser.add_argument("--log-level", choices=["debug", "info", "warning", "error"],
@@ -1060,7 +1064,7 @@ def main():
         return 0
 
     elif args.command == "config":
-        from .config import init_config, _default_config_path, get_config_value as _gcv2
+        from .config import init_config, _default_config_path, get_config_value as _gcv2, set_config_value as _scv2, reset_config_file as _rcf2
         action = getattr(args, "config_action", None)
         if action == "init":
             path = init_config()
@@ -1084,8 +1088,28 @@ def main():
             else:
                 print("(not set)")
             return 0
+        elif action == "set":
+            raw = args.value
+            low = raw.lower()
+            if low in ("true", "false"):
+                parsed = (low == "true")
+            else:
+                try:
+                    parsed = int(raw)
+                except ValueError:
+                    try:
+                        parsed = float(raw)
+                    except ValueError:
+                        parsed = raw
+            path = _scv2(args.key, parsed)
+            print(f"Set {args.key}={raw} in {path}")
+            return 0
+        elif action == "reset":
+            path = _rcf2()
+            print(f"Reset config to defaults: {path}")
+            return 0
         else:
-            print("Usage: clawui config {init|path|show|get <key>}")
+            print("Usage: clawui config {init|path|show|get <key>|set <key> <value>|reset}")
             return 0
 
     parser.print_help()

@@ -237,6 +237,71 @@ def init_config() -> Path:
     return path
 
 
+def _format_toml_scalar(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    s = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{s}"'
+
+
+def _dump_simple_toml(data: dict[str, Any]) -> str:
+    """Dump nested dict to TOML (supports scalars and one-level sections)."""
+    lines: list[str] = []
+
+    # top-level scalars first
+    for k, v in data.items():
+        if isinstance(v, dict):
+            continue
+        lines.append(f"{k} = {_format_toml_scalar(v)}")
+
+    # nested tables
+    for k, v in data.items():
+        if not isinstance(v, dict):
+            continue
+        if lines:
+            lines.append("")
+        lines.append(f"[{k}]")
+        for kk, vv in v.items():
+            if isinstance(vv, dict):
+                continue
+            lines.append(f"{kk} = {_format_toml_scalar(vv)}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def set_config_value(key: str, value: Any) -> Path:
+    """Set config value in TOML file (creates file if missing). Returns config path."""
+    path = Path(os.environ.get("CLAWUI_CONFIG", str(_default_config_path())))
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    cfg = dict(_load_config())
+    parts = _flatten_key(key)
+    if len(parts) == 1:
+        cfg[parts[0]] = value
+    else:
+        section, subkey = parts[0], parts[1]
+        section_node = cfg.get(section)
+        if not isinstance(section_node, dict):
+            section_node = {}
+            cfg[section] = section_node
+        section_node[subkey] = value
+
+    path.write_text(_dump_simple_toml(cfg), encoding="utf-8")
+    reset_cache()
+    return path
+
+
+def reset_config_file() -> Path:
+    """Overwrite config file with defaults. Returns path."""
+    path = Path(os.environ.get("CLAWUI_CONFIG", str(_default_config_path())))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(generate_default_config(), encoding="utf-8")
+    reset_cache()
+    return path
+
+
 def reset_cache():
     """Reset the config cache (for testing)."""
     global _config, _CONFIG_LOADED

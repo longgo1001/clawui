@@ -13,6 +13,8 @@ from src.config import (
     get_config_float,
     generate_default_config,
     init_config,
+    set_config_value,
+    reset_config_file,
     reset_cache,
 )
 
@@ -114,7 +116,6 @@ def test_init_config(tmp_path, monkeypatch):
 
     # Patch _default_config_path to use our tmp
     from src import config as config_mod
-    original = config_mod._default_config_path
 
     def _patched():
         return tmp_path / "clawui" / "config.toml"
@@ -130,3 +131,37 @@ def test_init_config(tmp_path, monkeypatch):
     path.write_text("# custom\n")
     init_config()
     assert path.read_text() == "# custom\n"
+
+
+def test_set_config_value_top_level(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.toml"
+    monkeypatch.setenv("CLAWUI_CONFIG", str(config_file))
+    reset_cache()
+
+    set_config_value("LOG_LEVEL", "debug")
+    assert config_file.exists()
+    assert get_config_value("LOG_LEVEL") == "debug"
+
+
+def test_set_config_value_nested(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.toml"
+    monkeypatch.setenv("CLAWUI_CONFIG", str(config_file))
+    reset_cache()
+
+    set_config_value("API_RETRY_MAX", 7)
+    assert get_config_value("API_RETRY_MAX") == "7"
+    text = config_file.read_text()
+    assert "[api]" in text
+    assert "retry_max = 7" in text
+
+
+def test_reset_config_file(tmp_path, monkeypatch):
+    config_file = tmp_path / "config.toml"
+    monkeypatch.setenv("CLAWUI_CONFIG", str(config_file))
+    reset_cache()
+
+    set_config_value("LOG_LEVEL", "debug")
+    reset_config_file()
+    text = config_file.read_text()
+    assert "# ClawUI Configuration" in text
+    assert "log_level = \"info\"" in text
