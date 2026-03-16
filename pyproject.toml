@@ -7,7 +7,7 @@ name = "clawui"
 version = "0.8.3"
 description = "AI-driven desktop and browser automation for Linux"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.10"
 keywords = ["gui", "automation", "desktop", "browser", "linux", "ai", "at-spi", "cdp"]
 classifiers = [

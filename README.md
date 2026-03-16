@@ -4,7 +4,12 @@ AI-driven desktop and browser automation for Linux. Control GUI applications, fi
 
 [![CI](https://github.com/longgo1001/clawui/actions/workflows/ci.yml/badge.svg)](https://github.com/longgo1001/clawui/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPLv3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](LICENSE)
+
+> **License / 商业许可说明**
+>
+> 本项目采用 **GNU Affero General Public License v3.0 (AGPLv3)** 开源发布。  
+> 若您为月活跃用户超过 100 万的企业，或希望将本项目集成到**闭源商业产品/云服务**中，请联系获取商业许可证（可豁免 AGPL 的开源义务）：**longgo1001@gmail.com**
 
 ## Features
 
