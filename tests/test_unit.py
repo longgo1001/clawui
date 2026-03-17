@@ -473,7 +473,7 @@ class TestCLI(unittest.TestCase):
 
     def test_cli_version(self):
         from clawui.cli import VERSION
-        assert VERSION == "0.8.3"
+        assert VERSION == "0.8.4"
 
     def test_run_inspect_function_exists(self):
         from clawui.cli import _run_inspect
@@ -1110,3 +1110,94 @@ class TestYdotoolKeyMapping(unittest.TestCase):
         from clawui.actions import _xdotool_key_to_ydotool
         assert _xdotool_key_to_ydotool("a") == "KEY_A"
         assert _xdotool_key_to_ydotool("5") == "KEY_5"
+
+
+class TestYdotoolActions(unittest.TestCase):
+    """Test all action functions through the ydotool code path."""
+
+    def setUp(self):
+        self._commands = []
+        self._patcher_run = unittest.mock.patch(
+            "clawui.actions._run",
+            side_effect=lambda cmd, **kw: self._commands.append(cmd) or unittest.mock.MagicMock(returncode=0, stdout="", stderr=""),
+        )
+        self._patcher_tool = unittest.mock.patch(
+            "clawui.actions._get_tool", return_value="ydotool"
+        )
+        self._patcher_display = unittest.mock.patch(
+            "clawui.actions._ensure_display"
+        )
+        self._patcher_run.start()
+        self._patcher_tool.start()
+        self._patcher_display.start()
+
+    def tearDown(self):
+        self._patcher_run.stop()
+        self._patcher_tool.stop()
+        self._patcher_display.stop()
+
+    def test_mouse_move(self):
+        from clawui.actions import mouse_move
+        mouse_move(100, 200)
+        assert any("ydotool mousemove 100 200" in c for c in self._commands)
+
+    def test_click_at_position(self):
+        from clawui.actions import click
+        click(50, 60, button="left")
+        assert any("ydotool mousemove 50 60" in c for c in self._commands)
+        assert any("ydotool click 1" in c for c in self._commands)
+
+    def test_click_right_button(self):
+        from clawui.actions import click
+        click(10, 20, button="right")
+        assert any("ydotool click 3" in c for c in self._commands)
+
+    def test_click_no_position(self):
+        from clawui.actions import click
+        self._commands.clear()
+        click()
+        # Should not contain mousemove
+        assert not any("mousemove" in c for c in self._commands)
+        assert any("ydotool click 1" in c for c in self._commands)
+
+    @unittest.mock.patch("time.sleep")
+    def test_double_click(self, mock_sleep):
+        from clawui.actions import double_click
+        double_click(30, 40)
+        click_cmds = [c for c in self._commands if "ydotool click 1" in c]
+        assert len(click_cmds) == 2
+        mock_sleep.assert_called()
+
+    @unittest.mock.patch("time.sleep")
+    def test_drag(self, mock_sleep):
+        from clawui.actions import drag
+        drag(10, 20, 100, 200)
+        assert any("mousemove 10 20" in c for c in self._commands)
+        assert any("click --down 1" in c for c in self._commands)
+        assert any("mousemove 100 200" in c for c in self._commands)
+        assert any("click --up 1" in c for c in self._commands)
+
+    def test_scroll_down(self):
+        from clawui.actions import scroll
+        scroll("down", 5)
+        assert any("mousemove --wheel -- 0 5" in c for c in self._commands)
+
+    def test_scroll_up(self):
+        from clawui.actions import scroll
+        scroll("up", 3)
+        assert any("mousemove --wheel -- 0 -3" in c for c in self._commands)
+
+    def test_type_text(self):
+        from clawui.actions import type_text
+        type_text("hello")
+        assert any("ydotool type" in c and "hello" in c for c in self._commands)
+
+    def test_press_key(self):
+        from clawui.actions import press_key
+        press_key("ctrl+c")
+        assert any("ydotool key KEY_LEFTCTRL+KEY_C" in c for c in self._commands)
+
+    def test_press_single_key(self):
+        from clawui.actions import press_key
+        press_key("Return")
+        assert any("ydotool key KEY_ENTER" in c for c in self._commands)
