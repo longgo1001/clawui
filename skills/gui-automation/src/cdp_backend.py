@@ -8,6 +8,22 @@ import time
 import random
 from typing import Optional, Dict, Any
 
+
+_KEY_EVENT_MAP = {
+    "ENTER": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13},
+    "RETURN": {"key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13},
+    "TAB": {"key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
+    "ESC": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27},
+    "ESCAPE": {"key": "Escape", "code": "Escape", "windowsVirtualKeyCode": 27},
+    "SPACE": {"key": " ", "code": "Space", "windowsVirtualKeyCode": 32, "text": " "},
+    "BACKSPACE": {"key": "Backspace", "code": "Backspace", "windowsVirtualKeyCode": 8},
+    "DELETE": {"key": "Delete", "code": "Delete", "windowsVirtualKeyCode": 46},
+    "ARROWUP": {"key": "ArrowUp", "code": "ArrowUp", "windowsVirtualKeyCode": 38},
+    "ARROWDOWN": {"key": "ArrowDown", "code": "ArrowDown", "windowsVirtualKeyCode": 40},
+    "ARROWLEFT": {"key": "ArrowLeft", "code": "ArrowLeft", "windowsVirtualKeyCode": 37},
+    "ARROWRIGHT": {"key": "ArrowRight", "code": "ArrowRight", "windowsVirtualKeyCode": 39},
+}
+
 from .cdp_helper import CDPClient, get_or_create_cdp_client
 
 
@@ -119,13 +135,31 @@ class CDPBackend:
         return self._run_with_retries("type_in_element", _do_type)
 
     def press_key(self, key: str):
-        """Press a key (e.g., 'Enter', 'Tab')."""
+        """Press one key reliably (supports Enter/Tab/Escape/Arrows/etc)."""
 
         def _do_press():
-            self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyDown", "key": key, "text": key})
-            time.sleep(0.05)
-            self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "key": key})
-            return f"pressed: {key}"
+            normalized = str(key or "").strip()
+            if not normalized:
+                raise ValueError("press_key requires a non-empty key")
+
+            mapping = _KEY_EVENT_MAP.get(normalized.upper())
+            if mapping:
+                payload = {"key": mapping["key"], "code": mapping["code"], "windowsVirtualKeyCode": mapping["windowsVirtualKeyCode"]}
+                if "text" in mapping:
+                    payload["text"] = mapping["text"]
+                self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyDown", **payload})
+                time.sleep(0.05)
+                self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyUp", **payload})
+                return f"pressed: {mapping['key']}"
+
+            # Fallback for single printable chars.
+            if len(normalized) == 1:
+                self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyDown", "key": normalized, "text": normalized})
+                time.sleep(0.05)
+                self.client._raw_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "key": normalized})
+                return f"pressed: {normalized}"
+
+            raise ValueError(f"Unsupported key: {key}")
 
         return self._run_with_retries("press_key", _do_press)
 

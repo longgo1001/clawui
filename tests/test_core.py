@@ -299,6 +299,53 @@ def test_cdp_click_at_raises_after_retry_exhausted():
         backend.click_at(10, 20)
 
 
+def test_cdp_press_key_uses_canonical_enter_payload():
+    """CDPBackend.press_key should normalize Enter/Return into robust CDP payload."""
+    from clawui.cdp_backend import CDPBackend
+
+    backend = CDPBackend.__new__(CDPBackend)
+    backend._ensure_connection = lambda: None
+
+    class DummyClient:
+        def __init__(self):
+            self.calls = []
+
+        def _raw_cdp(self, method, payload):
+            self.calls.append((method, payload))
+            return {"ok": True}
+
+    dummy = DummyClient()
+    backend.client = dummy
+    backend._reconnect = lambda _attempt=0: None
+
+    result = backend.press_key("Return")
+    assert result == "pressed: Enter"
+    assert len(dummy.calls) == 2
+    assert all(method == "Input.dispatchKeyEvent" for method, _ in dummy.calls)
+    assert dummy.calls[0][1]["type"] == "keyDown"
+    assert dummy.calls[0][1]["windowsVirtualKeyCode"] == 13
+    assert dummy.calls[1][1]["type"] == "keyUp"
+
+
+def test_cdp_press_key_rejects_unsupported_multi_char_tokens():
+    """CDPBackend.press_key should fail fast for unsupported key labels."""
+    from clawui.cdp_backend import CDPBackend
+    import pytest
+
+    backend = CDPBackend.__new__(CDPBackend)
+    backend._ensure_connection = lambda: None
+
+    class DummyClient:
+        def _raw_cdp(self, _method, _payload):
+            return {"ok": True}
+
+    backend.client = DummyClient()
+    backend._reconnect = lambda _attempt=0: None
+
+    with pytest.raises(RuntimeError, match="Unsupported key"):
+        backend.press_key("Ctrl+S")
+
+
 def test_marionette_import():
     from clawui.marionette_helper import MarionetteClient
 
