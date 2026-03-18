@@ -25,7 +25,7 @@ except ImportError:
     _MutterCapture = None
     _USE_MUTTER = False
 
-CL, CR, CT, CB = 80, 380, 60, 560
+CL, CR, CT, CB = 206, 450, 128, 650
 CW, CH = CR - CL, CB - CT
 CX = (CL + CR) // 2
 PY = CB - 50
@@ -105,8 +105,18 @@ def _cluster(mask, min_px=8):
 
 def detect(canvas):
     r, g, b = canvas[:,:,0].astype(np.int16), canvas[:,:,1].astype(np.int16), canvas[:,:,2].astype(np.int16)
-    enemies = _cluster((r > 150) & (g < 80) & (b < 80), 8) + _cluster((r > 200) & (g > 100) & (g < 180) & (b < 60), 8)
-    powerups = _cluster((g > 130) & (r < 100) & (b < 100), 10)
+    # Red/pink enemies: R>180, G<100, B<120 (enemies have pinkish tint B~86-97)
+    red_mask = (r > 180) & (g < 100) & (b < 120)
+    # Orange enemies: R>180, G 80-180, B<100
+    orange_mask = (r > 180) & (g > 80) & (g < 180) & (b < 100)
+    # Purple enemies: R>150, B>150, G<100
+    purple_mask = (r > 150) & (b > 150) & (g < 100)
+    enemies = _cluster(red_mask | orange_mask | purple_mask, 6)
+    # Powerups: bright green/cyan/yellow
+    green_mask = (g > 130) & (r < 120) & (b < 120)
+    cyan_mask = (b > 150) & (g > 130) & (r < 100)
+    yellow_mask = (r > 180) & (g > 180) & (b < 100)
+    powerups = _cluster(green_mask | cyan_mask | yellow_mask, 6)
     return enemies, powerups
 
 

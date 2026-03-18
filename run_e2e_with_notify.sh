@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run e2e test and send result to user via openclaw agent
 LOG="/tmp/e2e_test.log"
-SCRIPT="/home/hung/.openclaw/workspace/test_e2e.py"
+SCRIPT="/home/hung/.openclaw/workspace/tests/test_e2e.py"
 
 python3 "$SCRIPT" 2>&1 | tee "$LOG"
 EXIT_CODE=${PIPESTATUS[0]}

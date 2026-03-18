@@ -122,18 +122,17 @@ def create_repo_via_gh_cli(repo_name: str, repo_desc: str = "") -> Tuple[bool, O
         cmd = ['gh', 'repo', 'create', repo_name, '--public']
         if repo_desc:
             cmd.append(f'--description={repo_desc}')
-        # Use --json to get structured output (gh >= 2.0)
-        cmd.append('--json')
-        cmd.append('html_url')
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
         if result.returncode == 0:
-            try:
-                data = json.loads(result.stdout)
-                html_url = data.get("html_url")
-                return True, None, html_url
-            except json.JSONDecodeError:
-                # Fallback: try to extract URL from stderr
-                return True, None, f"https://github.com/{repo_name}"
+            # gh repo create prints the URL to stdout on success
+            output = (result.stdout.strip() or result.stderr.strip())
+            html_url = None
+            for line in output.splitlines():
+                line = line.strip()
+                if line.startswith("https://github.com/"):
+                    html_url = line
+                    break
+            return True, None, html_url or f"https://github.com/{repo_name}"
         else:
             err = result.stderr.strip() or result.stdout.strip()
             return False, f"gh error: {err[:200]}", None
