@@ -295,7 +295,8 @@ def test_cdp_click_at_raises_after_retry_exhausted():
 
     import pytest
 
-    with pytest.raises(RuntimeError, match="click_at"):
+    from clawui.exceptions import CDPError
+    with pytest.raises(CDPError, match="click_at"):
         backend.click_at(10, 20)
 
 
@@ -342,7 +343,8 @@ def test_cdp_press_key_rejects_unsupported_multi_char_tokens():
     backend.client = DummyClient()
     backend._reconnect = lambda _attempt=0: None
 
-    with pytest.raises(RuntimeError, match="Unsupported key"):
+    from clawui.exceptions import CDPError
+    with pytest.raises(CDPError, match="Unsupported key"):
         backend.press_key("Ctrl+S")
 
 

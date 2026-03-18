@@ -39,6 +39,7 @@
 
 - [x] **Structured exception hierarchy v0.9.0** (2026-03-18): Added `clawui.exceptions` module with full hierarchy (ClawUIError → Backend/Perception/Timeout/Agent/Config); migrated cdp_backend, perception, api, actions, screenshot to use typed exceptions; 135 tests passing
 - [x] **Version bump v0.9.0** (2026-03-18): Unified version across pyproject.toml/__init__.py/tests, updated CHANGELOG
+- [x] **Exception tests + retry integration** (2026-03-18): 26 new tests for exception hierarchy; retry decorator now uses typed RETRIABLE_EXCEPTIONS (BackendError, PerceptionError); 161 total tests passing
 
 ---
 Last updated: 2026-03-18
