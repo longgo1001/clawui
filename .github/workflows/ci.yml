@@ -39,8 +39,8 @@ jobs:
           pip install -e ".[dev]"
           pip install pytest pytest-timeout
 
-      - name: Run tests
-        run: pytest tests/test_unit.py -v --timeout=120
+      - name: Run unit tests
+        run: pytest tests/test_unit.py tests/test_core.py -v --timeout=120
 
   lint:
     runs-on: ubuntu-24.04
